@@ -1,0 +1,37 @@
+name: Windows executable
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+permissions:
+  contents: read
+jobs:
+  package:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.19.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
+      - run: pnpm desktop:build
+      - run: python -m pip install -r desktop/requirements.txt
+      - shell: pwsh
+        run: ./scripts/package-windows.ps1
+      - shell: pwsh
+        run: |
+          $taskProcess = Start-Process -FilePath ./artifacts/DasiNanum.exe -ArgumentList '--self-test' -WindowStyle Hidden -PassThru -Wait
+          if ($taskProcess.ExitCode -ne 0) { throw 'Executable self-test failed.' }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DasiNanum-Windows
+          path: artifacts/DasiNanum-Windows.zip
+          retention-days: 30
