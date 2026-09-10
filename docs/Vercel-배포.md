@@ -47,7 +47,8 @@ Preview에서도 등록·저장을 시험하려면 Preview 환경에도 별도�
 - 첫 화면 404: Root Directory, 최신 배포의 커밋, Build/Output 설정을 확인합니다.
 - “자료 저장소가 연결되지 않았어요”: Production의 `DATABASE_URL` 설정과 재배포 여부를 확인합니다.
 - 저장소를 설정했는데 503: 비밀번호, URL 인코딩, pooler 호스트·6543 포트, Supabase Healthy 상태를 확인합니다.
-- 인증서 오류가 확인된 경우: Supabase가 제공하는 DB 루트 인증서를 `DATABASE_CA_CERT` 환경변수에 넣고 재배포합니다. 인증서 검증을 끄지 않습니다.
+- Supabase 인증서: 공식 Supabase Root 2021 CA를 서버 코드에 포함해 Supabase DB·pooler 호스트에서 자동으로 사용합니다. 인증서 체인과 호스트명 검증을 유지합니다. 일반적인 Supabase 연결에는 인증서 환경변수를 따로 추가할 필요가 없습니다.
+- 인증서 교체 등으로 오류가 계속되는 경우: Supabase가 제공하는 최신 DB 루트 인증서를 `DATABASE_CA_CERT` 환경변수에 넣고 재배포합니다. 이 값은 기본 CA 설정을 대체합니다. 인증서 검증을 끄지 않습니다.
 
 503의 원인은 프로젝트 **Logs**에서 확인합니다. 앱을 새로고침한 뒤 최신 `/api/workspace` 요청의 메시지를 확인하세요. `workspace storage operation failed [오류코드]`처럼 대괄호 안에 오류 종류가 표시됩니다. 이전 배포의 기록에는 코드가 없으므로 최신 배포 완료 후 생긴 기록을 확인해야 합니다. 로그에는 허용된 진단 코드만 기록하며 원본 오류, 비밀번호, DB 주소, 사용자 자료는 기록하지 않습니다. 확인되지 않은 오류 종류는 `UNKNOWN`으로 표시합니다.
 
