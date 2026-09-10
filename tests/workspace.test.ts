@@ -10,6 +10,7 @@ import {
   StorageNotConfigured,
 } from '../lib/server/workspace.ts';
 import { compareMatching, type State, type Command } from '../lib/domain.ts';
+import { storageErrorCode } from '../lib/server/storage-diagnostics.ts';
 
 const origin = 'https://dasi-nanum.example';
 const endpoint = `${origin}/api/workspace`;
@@ -81,7 +82,10 @@ void test('PostgreSQL workspace: persistence, isolation, matching and atomic rev
       send({ type: 'new-event', title: '행사 A' }, revision),
       send({ type: 'new-event', title: '행사 B' }, revision),
     ]);
-    assert.deepEqual(responses.map((r) => r.status).sort((a, b) => a - b), [200, 409]);
+    assert.deepEqual(
+      responses.map((r) => r.status).sort((a, b) => a - b),
+      [200, 409],
+    );
     snapshot = (await responses
       .find((r) => r.status === 200)!
       .json()) as Snapshot;
@@ -176,6 +180,68 @@ void test('missing database returns a clear 503 without pretending to save', asy
     ((await response.json()) as { code: string }).code,
     'STORAGE_NOT_CONFIGURED',
   );
+});
+
+void test('storage failures log a useful code without exposing driver secrets', async (t) => {
+  const log = t.mock.method(console, 'error', () => {});
+  const secret =
+    'postgresql://private-user:private-password@private-host/private-db';
+  const driverError = Object.assign(new Error(secret), {
+    code: '28P01',
+    detail: secret,
+    connectionString: secret,
+  });
+  const handlers = createWorkspaceHandlers(() =>
+    createPostgresWorkspaces(async () => {
+      throw driverError;
+    }),
+  );
+  const response = await handlers.GET(new Request(endpoint));
+  assert.equal(response.status, 503);
+  assert.equal(response.headers.get('set-cookie'), null);
+  const body = await response.text();
+  assert.ok(!body.includes(secret));
+  assert.ok(!body.includes('28P01'));
+  assert.deepEqual(
+    log.mock.calls.map((call) => call.arguments),
+    [['workspace storage operation failed [28P01]']],
+  );
+});
+
+void test('diagnostics handle wrapped errors and reject arbitrary error text', () => {
+  const tlsError = Object.assign(new Error('secret connection details'), {
+    code: 'SELF_SIGNED_CERT_IN_CHAIN',
+  });
+  assert.equal(
+    storageErrorCode(new Error('wrapper', { cause: tlsError })),
+    'SELF_SIGNED_CERT_IN_CHAIN',
+  );
+  assert.equal(
+    storageErrorCode(
+      new AggregateError([{ code: 'ENETUNREACH' }], 'private host'),
+    ),
+    'ENETUNREACH',
+  );
+  assert.equal(
+    storageErrorCode({ code: 'private-password', message: 'private-password' }),
+    'UNKNOWN',
+  );
+  assert.equal(
+    storageErrorCode(
+      new TypeError('Invalid URL', { cause: { code: 'ERR_INVALID_URL' } }),
+    ),
+    'ERR_INVALID_URL',
+  );
+  assert.equal(
+    storageErrorCode(
+      new Error('Connection terminated due to connection timeout'),
+    ),
+    'CONNECTION_TIMEOUT',
+  );
+  assert.equal(storageErrorCode(null), 'UNKNOWN');
+  const cyclic: { cause?: unknown } = {};
+  cyclic.cause = cyclic;
+  assert.equal(storageErrorCode(cyclic), 'UNKNOWN');
 });
 
 void test('failed initialization can recover on a later request', async (t) => {

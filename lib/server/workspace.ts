@@ -5,6 +5,7 @@ import {
   type State,
   type Command,
 } from '../domain.ts';
+import { storageErrorCode } from './storage-diagnostics.ts';
 
 export type WorkspaceRow = { state: string; revision: number };
 export interface WorkspaceStore {
@@ -47,7 +48,9 @@ function unavailable(error: unknown, message: string) {
       503,
     );
   // Driver errors may contain connection details. Never log credentials or state.
-  console.error('workspace storage operation failed');
+  console.error(
+    `workspace storage operation failed [${storageErrorCode(error)}]`,
+  );
   return reply({ error: message }, 503);
 }
 
