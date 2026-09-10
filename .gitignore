@@ -39,4 +39,5 @@ next-env.d.ts
 *.tsbuildinfo
 /artifacts/
 /desktop-build/
+/vercel-build/
 !.env.example

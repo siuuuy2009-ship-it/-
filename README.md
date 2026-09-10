@@ -106,6 +106,10 @@ python -m pip install -r desktop/requirements.txt
 
 ## 온라인 배포
 
+**Vercel + Supabase:** [화면별 설정 안내](docs/Vercel-배포.md)를 따릅니다. Vercel에서는 **Vite**, Root Directory는 **저장소 최상위**를 사용합니다. `vercel.json`이 전용 빌드와 출력 위치를 지정하며 `/api/workspace` 요청을 `api/nanum-store.ts`로 연결해 Supabase PostgreSQL에 자료를 저장합니다. Production 환경변수 `DATABASE_URL`과 `ENABLE_EXPERIMENTAL_COREPACK=1`을 설정하고 재배포합니다.
+
+**Cloudflare/Sites:**
+
 웹 서버는 Cloudflare Workers 호환 출력과 D1 데이터베이스를 사용합니다. `.openai/hosting.json`에는 Sites 프로젝트의 공개 식별자와 논리 바인딩만 있습니다. 비밀번호나 배포 토큰은 포함하지 않습니다. GitHub에 푸시하는 것과 웹앱을 호스팅하는 것은 별도 단계입니다.
 
 이 저장소를 자신의 Sites 프로젝트로 배포하려면 자신의 프로젝트 식별자와 D1 바인딩을 설정한 뒤, 스키마 마이그레이션과 `pnpm build` 결과를 배포하세요. 데스크톱 버전은 Sites 계정 없이 사용합니다.
@@ -118,6 +122,8 @@ python -m pip install -r desktop/requirements.txt
 | `lib/domain.ts`              | 상태, 조건 필터, 신청·확정·취소 규칙          |
 | `app/nanum-app.tsx`          | 웹·데스크톱에서 함께 쓰는 한국어 화면         |
 | `app/api/workspace/route.ts` | 웹 저장·동시 변경 감지 API                    |
+| `api/nanum-store.ts`         | Vercel 저장 API (Supabase PostgreSQL)          |
+| `lib/server/workspace.ts`    | 웹 저장 API의 공통 쿠키·검증·업무 처리         |
 | `db/`, `drizzle/`            | D1 스키마와 마이그레이션                      |
 | `desktop/`                   | 오프라인 UI 진입점·SQLite 서버·Windows 실행기 |
 | `tests/`                     | 완전탐색 대조 및 업무 규칙 검사               |

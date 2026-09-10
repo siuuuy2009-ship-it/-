@@ -1,0 +1,14 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "vite",
+  "fluid": true,
+  "installCommand": "npx --yes pnpm@11.19.0 install --frozen-lockfile",
+  "buildCommand": "node node_modules/vite/bin/vite.js build --config vite.vercel.config.ts",
+  "outputDirectory": "vercel-build",
+  "rewrites": [
+    { "source": "/api/workspace", "destination": "/api/nanum-store" }
+  ],
+  "functions": {
+    "api/nanum-store.ts": { "maxDuration": 30 }
+  }
+}
