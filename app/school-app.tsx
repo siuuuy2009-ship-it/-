@@ -78,7 +78,7 @@ export default function SchoolApp() {
           error?: string;
         };
         if (!response.ok) throw new Error(data.error);
-        setUser(data.user);
+        setUser(initial.invite ? null : data.user);
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));

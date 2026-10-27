@@ -190,12 +190,13 @@ export function createSchoolHandlers(getStore: () => SchoolStore) {
           const { passwordHash: _, ...user } = account;
           return await signedIn(store, request, user);
         }
-        const user = await loggedIn(store, request);
-        if (!user) return reply({ error: '먼저 로그인해 주세요.' }, 401);
         if (body.action === 'logout') {
-          await store.logout(token(request));
+          const previous = token(request);
+          if (previous) await store.logout(previous);
           return reply({ user: null }, 200, sessionCookie(request, ''));
         }
+        const user = await loggedIn(store, request);
+        if (!user) return reply({ error: '먼저 로그인해 주세요.' }, 401);
         if (body.action === 'command') {
           if (
             !Number.isInteger(body.revision) ||

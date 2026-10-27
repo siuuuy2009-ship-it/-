@@ -330,6 +330,9 @@ void test('school accounts: one-time invitation, shared data, server permissions
       assert.ok(!JSON.stringify(active).includes(renewed.cookie.split('=')[1]));
       await query('UPDATE nanum_private.school_sessions SET expires = 0');
       assert.equal((await get('workspace', renewed.cookie)).status, 401);
+    const loggedOut = await post({ action: 'logout' }, renewed.cookie);
+    assert.match(loggedOut.response.headers.get('set-cookie')!, /Max-Age=0/);
+    await post({ action: 'logout' });
     },
   );
 
