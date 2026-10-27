@@ -4,8 +4,10 @@ import { resolve, sep } from 'node:path';
 
 const base = process.env.SETUP_BASE_URL ?? 'https://dasi-nanum.vercel.app';
 const directory = resolve('work/school-roster');
+const operatorOnly = process.argv.includes('--operator-only');
 const rosterPath = resolve(
-  process.argv[2] ?? 'work/school-roster/1학년-명단.csv',
+  process.argv.slice(2).find((arg) => arg !== '--operator-only') ??
+    'work/school-roster/1학년-명단.csv',
 );
 if (!rosterPath.startsWith(resolve('work') + sep))
   throw new Error('Use a private roster file inside work/.');
@@ -70,6 +72,17 @@ await writeFile(
   `다시, 나눔 운영자 로그인\n\n주소: ${link}\n학교코드: ${saved.schoolCode}\n아이디: ${saved.loginId}\n비밀번호: ${saved.password}\n\n이 파일과 전체 초대코드 명단은 운영자만 보관하세요.\n학생에게는 각자의 초대코드 또는 가입 링크만 전달하세요.\n`,
   { mode: 0o600 },
 );
+if (operatorOnly) {
+  await send({ action: 'logout' }, session.cookie);
+  console.log(
+    JSON.stringify({
+      schoolUrl: link,
+      invitedStudents: 0,
+      credentialsSaved: true,
+    }),
+  );
+  process.exit(0);
+}
 const roster = await readFile(rosterPath, 'utf8');
 const imported = await send(
   { action: 'import-roster', roster },
