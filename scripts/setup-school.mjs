@@ -1,6 +1,6 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
-import { resolve, sep } from 'node:path';
+import { basename, extname, resolve, sep } from 'node:path';
 
 const base = process.env.SETUP_BASE_URL ?? 'https://dasi-nanum.vercel.app';
 const directory = resolve('work/school-roster');
@@ -84,6 +84,7 @@ if (operatorOnly) {
   process.exit(0);
 }
 const roster = await readFile(rosterPath, 'utf8');
+const invitationFile = `${basename(rosterPath, extname(rosterPath)).replace(/-명단$/, '')}-학생별초대코드.csv`;
 const imported = await send(
   { action: 'import-roster', roster },
   session.cookie,
@@ -107,7 +108,7 @@ if (invitations.length) {
         row.map((value) => `"${value.replaceAll('"', '""')}"`).join(','),
       )
       .join('\r\n');
-  await writeFile(resolve(directory, '1학년-학생별초대코드.csv'), csv, {
+  await writeFile(resolve(directory, invitationFile), csv, {
     mode: 0o600,
     flag: 'wx',
   });
