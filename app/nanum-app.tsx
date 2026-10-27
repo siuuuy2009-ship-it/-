@@ -75,6 +75,8 @@ import {
   compareMatching,
   distance,
   emptyState,
+  parseStudentNumber,
+  personLabel,
   type Command,
   type State,
   type Item,
@@ -286,8 +288,10 @@ export default function NanumApp() {
 
   const state = snapshot.state;
   const comparison = useMemo(() => compareMatching(state), [state]);
-  const personName = (id: string) =>
-    state.people.find((p) => p.id === id)?.name ?? '알 수 없음';
+  const personName = (id: string) => {
+    const person = state.people.find((p) => p.id === id);
+    return person ? personLabel(person) : '알 수 없음';
+  };
   const itemName = (id: string) =>
     state.items.find((i) => i.id === id)?.title ?? '삭제된 물품';
   const filtered = state.items.filter(
@@ -343,7 +347,12 @@ export default function NanumApp() {
     e.preventDefault();
     let command: Command;
     if (modal === 'person')
-      command = { type: 'add-person', name: form.name, zone: form.zone };
+      command = {
+        type: 'add-person',
+        name: form.name,
+        studentNumber: form.studentNumber,
+        zone: form.zone,
+      };
     else if (modal === 'item')
       command = {
         ...form,
@@ -690,6 +699,7 @@ export default function NanumApp() {
                 ) : (
                   <div className="people-grid">
                     {state.people.map((person, i) => {
+                      const student = parseStudentNumber(person.studentNumber);
                       const application = state.applications.find(
                         (a) => a.participantId === person.id,
                       );
@@ -706,7 +716,8 @@ export default function NanumApp() {
                               {person.name.slice(0, 1)}
                             </span>
                             <div>
-                              <h3>{person.name}</h3>
+                              <h3>{personLabel(person)}</h3>
+                              {student && <p>{student.label}</p>}
                               <p>
                                 <MapPin size={13} />
                                 {person.zone}
@@ -1152,7 +1163,7 @@ export default function NanumApp() {
               {modal === 'request'
                 ? '실제로 받을 수 있는 물품을 모두 선택해 주세요. 한 회차에 최대 한 개를 받습니다.'
                 : modal === 'person'
-                  ? '같은 사람은 하나의 이름으로 등록해 주세요.'
+                  ? '이름과 네 자리 학번을 입력해 주세요.'
                   : modal === 'item'
                     ? '수령 가능한 구역과 상태를 정확히 알려 주세요.'
                     : modal === 'event'
@@ -1215,10 +1226,34 @@ export default function NanumApp() {
                       id="person-name"
                       value={form.name ?? ''}
                       onChange={(e) => values('name', e.target.value)}
-                      placeholder="예: 김민수 · 2학년 1반"
+                      placeholder="예: 김민수"
                       maxLength={20}
                       required
                     />
+                  </label>
+                  <label className="field" htmlFor="student-number">
+                    <span>학번</span>
+                    <Input
+                      id="student-number"
+                      value={form.studentNumber ?? ''}
+                      onChange={(e) => values('studentNumber', e.target.value)}
+                      placeholder="예: 2213"
+                      inputMode="numeric"
+                      pattern="[1-3][1-6](0[1-9]|1[0-6])"
+                      minLength={4}
+                      maxLength={4}
+                      title="학년 1~3, 반 1~6, 번호 01~16의 네 자리 학번"
+                      aria-describedby="student-number-description"
+                      required
+                    />
+                    <span
+                      className="field-hint"
+                      id="student-number-description"
+                      aria-live="polite"
+                    >
+                      {parseStudentNumber(form.studentNumber)?.label ??
+                        '학년 1~3 · 반 1~6 · 번호 01~16'}
+                    </span>
                   </label>
                   <Choice
                     label="활동 구역"
@@ -1246,7 +1281,7 @@ export default function NanumApp() {
                     value={form.ownerId}
                     options={state.people.map((p) => ({
                       value: p.id,
-                      label: p.name,
+                      label: personLabel(p),
                     }))}
                     onChange={(v) => values('ownerId', v)}
                   />
@@ -1292,7 +1327,7 @@ export default function NanumApp() {
                     value={form.participantId}
                     options={state.people.map((p) => ({
                       value: p.id,
-                      label: p.name,
+                      label: personLabel(p),
                     }))}
                     onChange={choosePerson}
                   />

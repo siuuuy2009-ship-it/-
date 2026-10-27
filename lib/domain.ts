@@ -9,7 +9,12 @@ export const CATEGORIES = [
 export const ZONES = ['본관', '후관', '기숙사'] as const;
 export const CONDITIONS = ['사용감 있음', '상태 좋음', '거의 새것'] as const;
 export type Zone = (typeof ZONES)[number];
-export type Person = { id: string; name: string; zone: Zone };
+export type Person = {
+  id: string;
+  name: string;
+  studentNumber?: string;
+  zone: Zone;
+};
 export type Item = {
   id: string;
   title: string;
@@ -38,6 +43,25 @@ export type State = {
 };
 export type Command = { type: string; [key: string]: unknown };
 export class DomainError extends Error {}
+
+export function parseStudentNumber(value: unknown) {
+  if (typeof value !== 'string') return null;
+  const studentNumber = value.trim();
+  if (!/^[1-3][1-6](0[1-9]|1[0-6])$/.test(studentNumber)) return null;
+  const grade = Number(studentNumber[0]);
+  const classroom = Number(studentNumber[1]);
+  const number = Number(studentNumber.slice(2));
+  return {
+    studentNumber,
+    label: `${grade}학년 ${classroom}반 ${number}번`,
+  };
+}
+
+export function personLabel(person: Person): string {
+  return person.studentNumber
+    ? `${person.name} (${person.studentNumber})`
+    : person.name;
+}
 
 export function distance(a: Zone, b: Zone): number {
   const meters = [
@@ -68,7 +92,12 @@ export function demoState(): State {
     '서연',
     '준호',
     '나눔부',
-  ].map((name, i) => ({ id: `p${i + 1}`, name, zone: '본관' }));
+  ].map((name, i) => ({
+    id: `p${i + 1}`,
+    name,
+    ...(i < 6 ? { studentNumber: `110${i + 1}` } : {}),
+    zone: '본관',
+  }));
   const titles = [
     '수학 개념 참고서 A',
     '수학 유형 참고서 B',
@@ -190,20 +219,22 @@ export function applyCommand(
   switch (cmd.type) {
     case 'add-person': {
       open();
-      if (state.people.length >= 80)
-        throw new DomainError('한 행사에는 최대 80명까지 등록할 수 있어요.');
+      if (state.people.length >= 288)
+        throw new DomainError('한 행사에는 최대 288명까지 등록할 수 있어요.');
       const name = text(cmd.name, '참여자 이름', 20);
-      if (
-        state.people.some(
-          (p) => p.name.normalize('NFC') === name.normalize('NFC'),
-        )
-      )
+      const student = parseStudentNumber(cmd.studentNumber);
+      if (!student)
         throw new DomainError(
-          '이미 등록된 이름입니다. 동명이인은 구분 이름을 붙여 주세요.',
+          '학번은 네 자리로 입력해 주세요. 학년 1~3, 반 1~6, 번호 01~16입니다. 예: 2213',
+        );
+      if (state.people.some((p) => p.studentNumber === student.studentNumber))
+        throw new DomainError(
+          '이미 등록된 학번입니다. 참여자 목록을 확인해 주세요.',
         );
       state.people.push({
         id: id(),
         name,
+        studentNumber: student.studentNumber,
         zone: choice(cmd.zone, ZONES, '활동 구역'),
       });
       break;

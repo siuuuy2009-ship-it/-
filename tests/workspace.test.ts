@@ -111,6 +111,34 @@ void test('PostgreSQL workspace: persistence, isolation, matching and atomic rev
   );
 
   await t.test(
+    'student numbers persist and invalid or duplicate registrations return 400',
+    async () => {
+      const response = await send({
+        type: 'add-person',
+        name: '김민수',
+        studentNumber: '2213',
+        zone: '본관',
+      });
+      assert.equal(response.status, 200);
+      snapshot = (await response.json()) as Snapshot;
+      assert.equal(snapshot.state.people[0].studentNumber, '2213');
+      for (const studentNumber of ['2213', '2217', undefined]) {
+        const invalid = await send({
+          type: 'add-person',
+          name: '다른 학생',
+          studentNumber,
+          zone: '본관',
+        });
+        assert.equal(invalid.status, 400);
+      }
+      const loaded = await handlers.GET(
+        new Request(endpoint, { headers: { Cookie: cookie } }),
+      );
+      assert.deepEqual(await loaded.json(), snapshot);
+    },
+  );
+
+  await t.test(
     'invalid origins, sessions, JSON and oversized bodies are rejected',
     async () => {
       const cases: {

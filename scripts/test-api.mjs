@@ -21,9 +21,33 @@ async function send(command, status = 200, revision = snapshot.revision) {
   return data;
 }
 await send({ type: 'new-event', title: 'API 검증 행사' });
-await send({ type: 'add-person', name: '신청자', zone: '본관' });
-await send({ type: 'add-person', name: '나눔자', zone: '후관' });
+await send({
+  type: 'add-person',
+  name: '신청자',
+  studentNumber: '2213',
+  zone: '본관',
+});
+await send({
+  type: 'add-person',
+  name: '나눔자',
+  studentNumber: '3616',
+  zone: '후관',
+});
 const [person, donor] = snapshot.state.people;
+assert.equal(person.studentNumber, '2213');
+await send(
+  { type: 'add-person', name: '중복', studentNumber: '2213', zone: '본관' },
+  400,
+);
+await send(
+  {
+    type: 'add-person',
+    name: '잘못된 학번',
+    studentNumber: '2217',
+    zone: '본관',
+  },
+  400,
+);
 await send({
   type: 'add-item',
   title: '검증 참고서',

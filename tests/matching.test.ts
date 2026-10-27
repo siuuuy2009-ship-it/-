@@ -161,9 +161,14 @@ void test('validation rejects malformed input and never mutates the input state'
   const state = demoState();
   const copy = structuredClone(state);
   const commands = [
-    { type: 'add-person', name: '민수', zone: '본관' },
-    { type: 'add-person', name: ' ', zone: '본관' },
-    { type: 'add-person', name: '수현', zone: '없는 장소' },
+    { type: 'add-person', name: '민수', studentNumber: '1101', zone: '본관' },
+    { type: 'add-person', name: ' ', studentNumber: '2213', zone: '본관' },
+    {
+      type: 'add-person',
+      name: '수현',
+      studentNumber: '2213',
+      zone: '없는 장소',
+    },
     { type: 'add-item', ownerId: 'missing' },
     {
       type: 'apply',
