@@ -9,6 +9,7 @@
     { "source": "/api/workspace", "destination": "/api/nanum-store" }
   ],
   "functions": {
-    "api/nanum-store.ts": { "maxDuration": 30 }
+    "api/nanum-store.ts": { "maxDuration": 30 },
+    "api/school.ts": { "maxDuration": 30 }
   }
 }

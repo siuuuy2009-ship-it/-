@@ -1,5 +1,5 @@
 import { createRoot } from 'react-dom/client';
-import NanumApp from '../app/nanum-app';
+import SchoolApp from '../app/school-app';
 import '../app/globals.css';
 
-createRoot(document.getElementById('root')!).render(<NanumApp />);
+createRoot(document.getElementById('root')!).render(<SchoolApp />);

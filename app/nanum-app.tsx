@@ -82,6 +82,7 @@ import {
   type Item,
 } from '@/lib/domain';
 import { maximumMatching, sequentialMatching, type Edge } from '@/lib/matching';
+import type { SchoolUser } from '@/lib/school';
 
 type Snapshot = { state: State; revision: number };
 type Confirm = { title: string; description: string; command: Command };
@@ -123,7 +124,15 @@ function Choice({
 const opts = (values: readonly string[]) =>
   values.map((value) => ({ value, label: value }));
 
-export default function NanumApp() {
+export default function NanumApp({
+  user,
+  onSessionExpired,
+}: {
+  user?: SchoolUser;
+  onSessionExpired?: () => void;
+} = {}) {
+  const isAdmin = !user || user.role === 'admin';
+  const endpoint = user ? '/api/school?action=workspace' : '/api/workspace';
   const [snapshot, setSnapshot] = useState<Snapshot>({
     state: emptyState(),
     revision: 0,
@@ -147,7 +156,8 @@ export default function NanumApp() {
     setLoading(true);
     setError('');
     try {
-      const response = await fetch('/api/workspace', { cache: 'no-store' });
+      const response = await fetch(endpoint, { cache: 'no-store' });
+      if (response.status === 401) onSessionExpired?.();
       const data = (await response.json()) as Snapshot & { error?: string };
       if (!response.ok) throw new Error(data.error);
       setSnapshot(data);
@@ -157,7 +167,7 @@ export default function NanumApp() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [endpoint, onSessionExpired]);
   useEffect(() => {
     void Promise.resolve().then(load);
   }, [load]);
@@ -171,11 +181,16 @@ export default function NanumApp() {
       setFormError('');
       setNotice('');
       try {
-        const response = await fetch('/api/workspace', {
+        const response = await fetch(user ? '/api/school' : '/api/workspace', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ revision: current.current.revision, command }),
+          body: JSON.stringify({
+            ...(user ? { action: 'command' } : {}),
+            revision: current.current.revision,
+            command,
+          }),
         });
+        if (response.status === 401) onSessionExpired?.();
         const data = (await response.json()) as Snapshot & { error?: string };
         if (!response.ok) {
           if (response.status === 409) {
@@ -199,7 +214,7 @@ export default function NanumApp() {
         setBusy(false);
       }
     },
-    [load],
+    [load, user, onSessionExpired],
   );
   const perform = (command: Command, message?: string) => {
     void act(command, message).catch(() => {});
@@ -286,6 +301,19 @@ export default function NanumApp() {
     return () => lifecycle.abort();
   }, [act]);
 
+  useEffect(() => {
+    if (!user) return;
+    const refresh = () => {
+      if (!mutation.current && !document.hidden) void load();
+    };
+    const timer = window.setInterval(refresh, 30000);
+    window.addEventListener('focus', refresh);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener('focus', refresh);
+    };
+  }, [user, load]);
+
   const state = snapshot.state;
   const comparison = useMemo(() => compareMatching(state), [state]);
   const personName = (id: string) => {
@@ -317,6 +345,7 @@ export default function NanumApp() {
     setSelected(existing?.itemIds ?? []);
   }
   function show(kind: Modal, item?: Item, participantId?: string) {
+    if (user && (kind === 'person' || (!isAdmin && kind === 'event'))) return;
     setFormError('');
     setSelected([]);
     setForm({
@@ -325,12 +354,18 @@ export default function NanumApp() {
       condition: '2',
       minCondition: '1',
       maxDistance: '500',
-      ownerId: state.people[0]?.id ?? '',
-      participantId: participantId ?? state.people[0]?.id ?? '',
+      ownerId: !isAdmin && user ? user.id : (state.people[0]?.id ?? ''),
+      participantId:
+        !isAdmin && user
+          ? user.id
+          : (participantId ?? state.people[0]?.id ?? ''),
       title: '새 학기 나눔 행사',
     });
     if (kind === 'request') {
-      const id = participantId ?? state.people[0]?.id ?? '';
+      const id =
+        !isAdmin && user
+          ? user.id
+          : (participantId ?? state.people[0]?.id ?? '');
       const existing = state.applications.find((a) => a.participantId === id);
       setForm((f) => ({
         ...f,
@@ -430,7 +465,11 @@ export default function NanumApp() {
           다시, 나눔<span className="brand-dot">.</span>
         </button>
         <span className="header-label">우리 학교 자원 순환 프로젝트</span>
-        <span className="mode-badge">학교 나눔 · 운영자</span>
+        <span className="mode-badge">
+          {user
+            ? `${user.name} · ${isAdmin ? '운영자' : user.loginId}`
+            : '예시 행사 · 운영자'}
+        </span>
       </header>
       <main className="workspace" aria-busy={isDisabled}>
         <div className="page-heading">
@@ -441,11 +480,13 @@ export default function NanumApp() {
           </div>
           <Button
             className="action-button"
-            onClick={() => show(state.people.length ? 'item' : 'person')}
-            disabled={isDisabled || !open}
+            onClick={() =>
+              show(state.people.length || user ? 'item' : 'person')
+            }
+            disabled={isDisabled || !open || (!!user && !state.people.length)}
           >
             <Plus size={18} />
-            {state.people.length ? '물품 등록' : '참여자 등록'}
+            {state.people.length || user ? '물품 등록' : '참여자 등록'}
           </Button>
         </div>
         {error && (
@@ -511,13 +552,15 @@ export default function NanumApp() {
                 <span className="demo-label">
                   {state.isDemo ? '예시 자료' : '내 행사'}
                 </span>
-                <Button
-                  variant="ghost"
-                  onClick={() => show('event')}
-                  disabled={isDisabled}
-                >
-                  새 행사
-                </Button>
+                {isAdmin && (
+                  <Button
+                    variant="ghost"
+                    onClick={() => show('event')}
+                    disabled={isDisabled}
+                  >
+                    새 행사
+                  </Button>
+                )}
               </div>
             </div>
             {state.isDemo && (
@@ -678,18 +721,23 @@ export default function NanumApp() {
                 <div className="section-top">
                   <div>
                     <h2>
-                      함께 나누는 사람들 <span>{state.people.length}</span>
+                      {isAdmin ? '함께 나누는 사람들' : '내 신청'}{' '}
+                      <span>{isAdmin ? state.people.length : 1}</span>
                     </h2>
-                    <p className="subtle">
-                      운영자가 참여자의 이름과 받을 수 있는 물품을 등록합니다.
-                    </p>
+                    {isAdmin && (
+                      <p className="subtle">
+                        운영자가 참여자의 이름과 받을 수 있는 물품을 등록합니다.
+                      </p>
+                    )}
                   </div>
-                  <Button
-                    onClick={() => show('person')}
-                    disabled={isDisabled || !open}
-                  >
-                    <Plus size={17} /> 참여자 등록
-                  </Button>
+                  {!user && (
+                    <Button
+                      onClick={() => show('person')}
+                      disabled={isDisabled || !open}
+                    >
+                      <Plus size={17} /> 참여자 등록
+                    </Button>
+                  )}
                 </div>
                 {!state.people.length ? (
                   empty(
@@ -698,80 +746,86 @@ export default function NanumApp() {
                   )
                 ) : (
                   <div className="people-grid">
-                    {state.people.map((person, i) => {
-                      const student = parseStudentNumber(person.studentNumber);
-                      const application = state.applications.find(
-                        (a) => a.participantId === person.id,
-                      );
-                      const valid = comparison.edges.filter(
-                        (e) => e.participantId === person.id,
-                      ).length;
-                      const match = state.matches.find(
-                        (m) => m.participantId === person.id,
-                      );
-                      return (
-                        <article className="person-card" key={person.id}>
-                          <div className="person-heading">
-                            <span className={'avatar color-' + (i % 4)}>
-                              {person.name.slice(0, 1)}
-                            </span>
-                            <div>
-                              <h3>{personLabel(person)}</h3>
-                              {student && <p>{student.label}</p>}
-                              <p>
-                                <MapPin size={13} />
-                                {person.zone}
-                              </p>
-                            </div>
-                            <Button
-                              variant="ghost"
-                              onClick={() =>
-                                show('request', undefined, person.id)
-                              }
-                              disabled={
-                                isDisabled || !open || !state.items.length
-                              }
-                            >
-                              {application ? '신청 수정' : '신청 입력'}
-                            </Button>
-                          </div>
-                          <div className="application-list">
-                            {application?.itemIds.length ? (
-                              application.itemIds.map((id) => (
-                                <span key={id}>{itemName(id)}</span>
-                              ))
-                            ) : (
-                              <p className="subtle">신청한 물품이 없습니다.</p>
-                            )}
-                          </div>
-                          <div className="person-footer">
-                            {match ? (
-                              <span className="text-primary">
-                                {match.status === 'delivered'
-                                  ? '수령 완료'
-                                  : '배정 확정'}{' '}
-                                · {itemName(match.itemId)}
+                    {state.people
+                      .filter((person) => isAdmin || person.id === user?.id)
+                      .map((person, i) => {
+                        const student = parseStudentNumber(
+                          person.studentNumber,
+                        );
+                        const application = state.applications.find(
+                          (a) => a.participantId === person.id,
+                        );
+                        const valid = comparison.edges.filter(
+                          (e) => e.participantId === person.id,
+                        ).length;
+                        const match = state.matches.find(
+                          (m) => m.participantId === person.id,
+                        );
+                        return (
+                          <article className="person-card" key={person.id}>
+                            <div className="person-heading">
+                              <span className={'avatar color-' + (i % 4)}>
+                                {person.name.slice(0, 1)}
                               </span>
-                            ) : application ? (
-                              <>
-                                <span>조건에 맞는 물품 {valid}개</span>
-                                <span>최대 {application.maxDistance}m</span>
-                              </>
-                            ) : (
-                              <span>
-                                나눔 물품{' '}
-                                {
-                                  state.items.filter(
-                                    (item) => item.ownerId === person.id,
-                                  ).length
+                              <div>
+                                <h3>{personLabel(person)}</h3>
+                                {student && <p>{student.label}</p>}
+                                <p>
+                                  <MapPin size={13} />
+                                  {person.zone}
+                                </p>
+                              </div>
+                              <Button
+                                variant="ghost"
+                                onClick={() =>
+                                  show('request', undefined, person.id)
                                 }
-                                개
-                              </span>
-                            )}
-                          </div>
-                        </article>
-                      );
-                    })}
+                                disabled={
+                                  isDisabled || !open || !state.items.length
+                                }
+                              >
+                                {application ? '신청 수정' : '신청 입력'}
+                              </Button>
+                            </div>
+                            <div className="application-list">
+                              {application?.itemIds.length ? (
+                                application.itemIds.map((id) => (
+                                  <span key={id}>{itemName(id)}</span>
+                                ))
+                              ) : (
+                                <p className="subtle">
+                                  신청한 물품이 없습니다.
+                                </p>
+                              )}
+                            </div>
+                            <div className="person-footer">
+                              {match ? (
+                                <span className="text-primary">
+                                  {match.status === 'delivered'
+                                    ? '수령 완료'
+                                    : '배정 확정'}{' '}
+                                  · {itemName(match.itemId)}
+                                </span>
+                              ) : application ? (
+                                <>
+                                  <span>조건에 맞는 물품 {valid}개</span>
+                                  <span>최대 {application.maxDistance}m</span>
+                                </>
+                              ) : (
+                                <span>
+                                  나눔 물품{' '}
+                                  {
+                                    state.items.filter(
+                                      (item) => item.ownerId === person.id,
+                                    ).length
+                                  }
+                                  개
+                                </span>
+                              )}
+                            </div>
+                          </article>
+                        );
+                      })}
                   </div>
                 )}
                 <div className="info-note">
@@ -791,53 +845,55 @@ export default function NanumApp() {
                       현재 물품과 신청을 기준으로 계산한 결과입니다.
                     </p>
                   </div>
-                  <div className="button-row">
-                    {open ? (
+                  {isAdmin && (
+                    <div className="button-row">
+                      {open ? (
+                        <Button
+                          variant="outline"
+                          disabled={isDisabled}
+                          onClick={() =>
+                            setConfirm({
+                              title: '신청을 마감할까요?',
+                              description:
+                                '마감 후에는 물품과 신청을 수정할 수 없어요. 배정을 확정하기 전에는 다시 열 수 있습니다.',
+                              command: { type: 'close' },
+                            })
+                          }
+                        >
+                          신청 마감
+                        </Button>
+                      ) : (
+                        <Button
+                          variant="outline"
+                          disabled={isDisabled || !!state.matches.length}
+                          onClick={() =>
+                            perform(
+                              { type: 'reopen' },
+                              '신청 접수를 다시 열었습니다.',
+                            )
+                          }
+                        >
+                          접수 다시 열기
+                        </Button>
+                      )}
                       <Button
-                        variant="outline"
-                        disabled={isDisabled}
+                        disabled={
+                          isDisabled || open || !comparison.maximum.pairs.length
+                        }
                         onClick={() =>
                           setConfirm({
-                            title: '신청을 마감할까요?',
+                            title: `새 배정 ${comparison.maximum.pairs.length}건을 확정할까요?`,
                             description:
-                              '마감 후에는 물품과 신청을 수정할 수 없어요. 배정을 확정하기 전에는 다시 열 수 있습니다.',
-                            command: { type: 'close' },
+                              '확정한 배정은 다음 계산에서도 유지됩니다. 실제 전달 여부는 별도로 확인해 주세요.',
+                            command: { type: 'confirm' },
                           })
                         }
                       >
-                        신청 마감
+                        <CheckCheck size={18} />
+                        배정 확정
                       </Button>
-                    ) : (
-                      <Button
-                        variant="outline"
-                        disabled={isDisabled || !!state.matches.length}
-                        onClick={() =>
-                          perform(
-                            { type: 'reopen' },
-                            '신청 접수를 다시 열었습니다.',
-                          )
-                        }
-                      >
-                        접수 다시 열기
-                      </Button>
-                    )}
-                    <Button
-                      disabled={
-                        isDisabled || open || !comparison.maximum.pairs.length
-                      }
-                      onClick={() =>
-                        setConfirm({
-                          title: `새 배정 ${comparison.maximum.pairs.length}건을 확정할까요?`,
-                          description:
-                            '확정한 배정은 다음 계산에서도 유지됩니다. 실제 전달 여부는 별도로 확인해 주세요.',
-                          command: { type: 'confirm' },
-                        })
-                      }
-                    >
-                      <CheckCheck size={18} />
-                      배정 확정
-                    </Button>
-                  </div>
+                    </div>
+                  )}
                 </div>
                 <div className="comparison-grid">
                   <div className="comparison-card">
@@ -1007,7 +1063,7 @@ export default function NanumApp() {
                               </span>
                             </TableCell>
                             <TableCell>
-                              {m.status === 'confirmed' ? (
+                              {m.status === 'confirmed' && isAdmin ? (
                                 <div className="button-row">
                                   <Button
                                     variant="outline"
@@ -1043,11 +1099,13 @@ export default function NanumApp() {
                                     취소
                                   </Button>
                                 </div>
-                              ) : (
+                              ) : m.status === 'delivered' ? (
                                 <CheckCheck
                                   size={19}
                                   className="text-primary"
                                 />
+                              ) : (
+                                <span className="subtle">운영자 확인 대기</span>
                               )}
                             </TableCell>
                           </TableRow>
@@ -1103,21 +1161,23 @@ export default function NanumApp() {
                     </div>
                   </div>
                   <div className="button-row">
-                    <Button
-                      variant="outline"
-                      disabled={isDisabled}
-                      onClick={() =>
-                        setConfirm({
-                          title: '예시 자료로 바꿀까요?',
-                          description:
-                            '현재 행사 자료를 가상 물품 6개와 참여자 7명으로 바꿉니다. 예시에서는 신청자 6명에 대해 순차 배정 3건, 최대 매칭 6건이 나옵니다.',
-                          command: { type: 'load-demo' },
-                        })
-                      }
-                    >
-                      <RefreshCw size={16} />
-                      예시 행사 불러오기
-                    </Button>
+                    {!user && (
+                      <Button
+                        variant="outline"
+                        disabled={isDisabled}
+                        onClick={() =>
+                          setConfirm({
+                            title: '예시 자료로 바꿀까요?',
+                            description:
+                              '현재 행사 자료를 가상 물품 6개와 참여자 7명으로 바꿉니다. 예시에서는 신청자 6명에 대해 순차 배정 3건, 최대 매칭 6건이 나옵니다.',
+                            command: { type: 'load-demo' },
+                          })
+                        }
+                      >
+                        <RefreshCw size={16} />
+                        예시 행사 불러오기
+                      </Button>
+                    )}
                     <a
                       className="source-link"
                       href="https://github.com/siuuuy2009-ship-it/-"
@@ -1134,10 +1194,11 @@ export default function NanumApp() {
         )}
         <footer>
           <span>
-            행사 자료는 서버에 저장됩니다. 이 브라우저의 쿠키로 내 작업 공간에
-            접근합니다.
+            {user
+              ? '학교 나눔함은 같은 학교코드로 로그인한 학생들과 공유됩니다.'
+              : '가상 자료 시연 공간입니다.'}
           </span>
-          <span>다시, 나눔 · 운영자용 MVP</span>
+          <span>다시, 나눔 · {isAdmin ? '운영자' : '학생'}</span>
         </footer>
       </main>
       <Dialog
@@ -1198,22 +1259,24 @@ export default function NanumApp() {
                 >
                   나눔 신청 입력
                 </Button>
-                <Button
-                  variant="ghost"
-                  disabled={isDisabled || !open}
-                  onClick={() => {
-                    setModal(null);
-                    setConfirm({
-                      title: '물품을 삭제할까요?',
-                      description:
-                        '물품과 연결된 신청에서 이 물품을 제외합니다.',
-                      command: { type: 'delete-item', itemId: detail.id },
-                    });
-                  }}
-                >
-                  <Trash2 size={16} />
-                  삭제
-                </Button>
+                {(isAdmin || detail.ownerId === user?.id) && (
+                  <Button
+                    variant="ghost"
+                    disabled={isDisabled || !open}
+                    onClick={() => {
+                      setModal(null);
+                      setConfirm({
+                        title: '물품을 삭제할까요?',
+                        description:
+                          '물품과 연결된 신청에서 이 물품을 제외합니다.',
+                        command: { type: 'delete-item', itemId: detail.id },
+                      });
+                    }}
+                  >
+                    <Trash2 size={16} />
+                    삭제
+                  </Button>
+                )}
               </div>
             </div>
           ) : (
@@ -1279,10 +1342,12 @@ export default function NanumApp() {
                   <Choice
                     label="나눔하는 사람"
                     value={form.ownerId}
-                    options={state.people.map((p) => ({
-                      value: p.id,
-                      label: personLabel(p),
-                    }))}
+                    options={state.people
+                      .filter((p) => isAdmin || p.id === user?.id)
+                      .map((p) => ({
+                        value: p.id,
+                        label: personLabel(p),
+                      }))}
                     onChange={(v) => values('ownerId', v)}
                   />
                   <div className="form-columns">
@@ -1325,10 +1390,12 @@ export default function NanumApp() {
                   <Choice
                     label="신청하는 사람"
                     value={form.participantId}
-                    options={state.people.map((p) => ({
-                      value: p.id,
-                      label: personLabel(p),
-                    }))}
+                    options={state.people
+                      .filter((p) => isAdmin || p.id === user?.id)
+                      .map((p) => ({
+                        value: p.id,
+                        label: personLabel(p),
+                      }))}
                     onChange={choosePerson}
                   />
                   <div className="form-columns">

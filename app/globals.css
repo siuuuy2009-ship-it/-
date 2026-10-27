@@ -850,6 +850,134 @@ footer {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 18px;
 }
+
+.auth-page {
+  width: min(100% - 40px, 440px);
+  margin: 56px auto;
+  color: #19243b;
+}
+.auth-brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 30px;
+}
+.auth-brand h1 {
+  font-size: 30px;
+}
+.auth-page h2 {
+  font-size: 22px;
+  margin: 24px 0;
+}
+.auth-modes {
+  display: flex;
+  border-bottom: 1px solid #dce1e9;
+}
+.auth-modes button {
+  flex: 1;
+  padding: 12px 8px;
+  background: none;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  color: #66758b;
+  cursor: pointer;
+}
+.auth-modes button[aria-selected='true'] {
+  color: #4f46e5;
+  border-bottom-color: #4f46e5;
+  font-weight: 700;
+}
+.auth-links {
+  margin-top: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+.auth-loading {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: center;
+  min-height: 50vh;
+}
+.account-toolbar {
+  padding: 12px max(20px, calc((100% - 1240px) / 2));
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  border-bottom: 1px solid #dce1e9;
+  background: #fff;
+  font-size: 13px;
+}
+.account-toolbar > .button-row {
+  margin-left: auto;
+}
+.auth-notice {
+  padding: 12px 20px;
+}
+.school-admin h1 {
+  font-size: 24px;
+}
+.roster-import {
+  max-width: 660px;
+  padding: 24px 0;
+}
+.roster-upload {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border: 1px solid #dce1e9;
+  border-radius: 6px;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+}
+.roster-upload input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+  width: 100%;
+}
+.issued-invitations,
+.reset-invitation {
+  padding: 22px 0;
+  border-top: 1px solid #dce1e9;
+  border-bottom: 1px solid #dce1e9;
+}
+.issued-invitations p,
+.reset-invitation p {
+  margin: 12px 0;
+}
+.issued-invitations li {
+  margin: 8px 0;
+  overflow-wrap: anywhere;
+}
+.issued-invitations code {
+  font-size: 12px;
+}
+.school-notice {
+  color: #1a7755;
+  padding: 14px 0;
+}
+.roster-table {
+  overflow-x: auto;
+  margin: 24px 0;
+}
+.roster-table table {
+  border-collapse: collapse;
+  width: 100%;
+  min-width: 360px;
+}
+.roster-table th,
+.roster-table td {
+  padding: 10px 14px;
+  border-bottom: 1px solid #dce1e9;
+  text-align: left;
+}
 .person-card {
   background: #fff;
   border: 1px solid #e0e5ee;
