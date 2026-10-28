@@ -240,9 +240,9 @@ export default function SchoolApp() {
           <form className="withdraw-form nanum-form" onSubmit={withdraw}>
             <h2>동의 철회 및 계정·정보 삭제</h2>
             <p>
-              이름·학번, 계정과 로그인, 본인의 물품·신청 및 연결된 배정 자료를
-              삭제합니다. 다른 학생이 신청한 본인 물품의 배정도 취소됩니다. 삭제
-              후 복구할 수 없습니다.
+              이름·학번, 계정과 로그인, 본인의 물품·신청·매너 평가 및 연결된
+              배정 자료를 삭제합니다. 다른 학생이 신청한 본인 물품의 배정도
+              취소됩니다. 삭제 후 복구할 수 없습니다.
             </p>
             <label className="field" htmlFor="delete-password">
               <span>현재 비밀번호</span>

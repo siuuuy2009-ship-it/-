@@ -522,9 +522,55 @@ footer {
 .text-primary {
   color: var(--primary);
 }
-.wide-button {
-  width: 100%;
-  min-height: 42px;
+.manner-badge {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  color: #477066;
+  background: #edf7f0;
+  border-radius: 6px;
+  padding: 3px 7px;
+  font-size: 12px;
+  font-weight: 600;
+  margin: 4px 0;
+}
+.manner-badge small {
+  color: #677a72;
+  font-weight: 400;
+}
+.manner-badge.warm {
+  color: #167445;
+  background: #e4f6e8;
+}
+.manner-badge.careful {
+  color: #8a6219;
+  background: #fff4d8;
+}
+.manner-options {
+  border: 0;
+  padding: 0;
+  min-width: 0;
+  display: grid;
+  gap: 10px;
+  margin: 12px 0;
+}
+.manner-options button {
+  min-height: 68px;
+  height: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+  padding: 12px 14px;
+  white-space: normal;
+}
+.manner-options button > span {
+  font-weight: 700;
+}
+.manner-options small {
+  font-size: 12px;
+  font-weight: 400;
 }
 .event-bar {
   display: flex;

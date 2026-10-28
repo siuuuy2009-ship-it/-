@@ -28,6 +28,7 @@ import {
   Search,
   Shirt,
   Sparkles,
+  Star,
   Trash2,
   Users,
   X,
@@ -80,11 +81,21 @@ import {
   type Command,
   type State,
   type Item,
+  type Person,
 } from '@/lib/domain';
 import { maximumMatching, sequentialMatching, type Edge } from '@/lib/matching';
 import type { SchoolUser } from '@/lib/school';
+import {
+  mannerSummary,
+  MANNER_OPTIONS,
+  MANNER_NOTICE_VERSION,
+} from '@/lib/manners';
 
-type Snapshot = { state: State; revision: number };
+type Snapshot = {
+  state: State;
+  revision: number;
+  mannerRatings?: Record<string, number>;
+};
 type Confirm = { title: string; description: string; command: Command };
 type Modal = 'item' | 'person' | 'request' | 'detail' | 'event' | null;
 const categoryIcons = [BookOpen, Shirt, PencilRuler, Coffee];
@@ -124,6 +135,22 @@ function Choice({
 const opts = (values: readonly string[]) =>
   values.map((value) => ({ value, label: value }));
 
+function MannerBadge({ person }: { person?: Person }) {
+  const manners = person?.manners ?? mannerSummary();
+  return (
+    <span
+      className={
+        'manner-badge ' +
+        (manners.score >= 70 ? 'warm' : manners.score < 50 ? 'careful' : '')
+      }
+      title={`기본 50점 · 좋았어요 +2 · 보통 0 · 아쉬웠어요 −2 · 받은 평가 ${manners.reviewCount}건`}
+    >
+      <Star size={13} aria-hidden="true" /> 매너 {manners.score}점{' '}
+      <small>평가 {manners.reviewCount}</small>
+    </span>
+  );
+}
+
 export default function NanumApp({
   user,
   onSessionExpired,
@@ -150,6 +177,8 @@ export default function NanumApp({
   const [form, setForm] = useState<Record<string, string>>({});
   const [selected, setSelected] = useState<string[]>([]);
   const [formError, setFormError] = useState('');
+  const [reviewItem, setReviewItem] = useState<string | null>(null);
+  const [reviewRating, setReviewRating] = useState<number | null>(null);
   const current = useRef(snapshot);
   const mutation = useRef(false);
   const load = useCallback(async () => {
@@ -700,20 +729,6 @@ export default function NanumApp({
                         </p>
                       </div>
                     </div>
-                    <Button
-                      variant="outline"
-                      className="wide-button"
-                      onClick={() => show('request')}
-                      disabled={
-                        isDisabled ||
-                        !open ||
-                        !state.people.length ||
-                        !state.items.length
-                      }
-                    >
-                      <Plus size={17} />
-                      나눔 신청 입력
-                    </Button>
                   </aside>
                 </div>
               </TabsContent>
@@ -769,6 +784,7 @@ export default function NanumApp({
                               </span>
                               <div>
                                 <h3>{personLabel(person)}</h3>
+                                <MannerBadge person={person} />
                                 {student && <p>{student.label}</p>}
                                 <p>
                                   <MapPin size={13} />
@@ -1037,6 +1053,9 @@ export default function NanumApp({
                           <TableHead>나눔자 → 받는 사람</TableHead>
                           <TableHead>상태</TableHead>
                           <TableHead>전달 확인</TableHead>
+                          {user?.role === 'student' && (
+                            <TableHead>매너 평가</TableHead>
+                          )}
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -1108,6 +1127,33 @@ export default function NanumApp({
                                 <span className="subtle">운영자 확인 대기</span>
                               )}
                             </TableCell>
+                            {user?.role === 'student' && (
+                              <TableCell>
+                                {m.status === 'delivered' &&
+                                (m.participantId === user.id ||
+                                  state.items.find((i) => i.id === m.itemId)
+                                    ?.ownerId === user.id) ? (
+                                  snapshot.mannerRatings?.[m.itemId] !==
+                                  undefined ? (
+                                    <span className="subtle">평가 완료</span>
+                                  ) : (
+                                    <Button
+                                      variant="outline"
+                                      disabled={isDisabled}
+                                      onClick={() => {
+                                        setReviewItem(m.itemId);
+                                        setReviewRating(null);
+                                        setFormError('');
+                                      }}
+                                    >
+                                      <Star size={15} /> 상대 평가
+                                    </Button>
+                                  )
+                                ) : (
+                                  <span className="subtle">—</span>
+                                )}
+                              </TableCell>
+                            )}
                           </TableRow>
                         ))}
                       </TableBody>
@@ -1240,6 +1286,10 @@ export default function NanumApp({
               <div className="detail-meta">
                 <span>나눔자</span>
                 <strong>{personName(detail.ownerId)}</strong>
+                <span>매너 점수</span>
+                <MannerBadge
+                  person={state.people.find((p) => p.id === detail.ownerId)}
+                />
                 <span>수령 구역</span>
                 <strong>{detail.zone}</strong>
                 <span>신청자</span>
@@ -1549,6 +1599,73 @@ export default function NanumApp({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      <Dialog
+        open={reviewItem !== null}
+        onOpenChange={(value) => {
+          if (!value && !busy) setReviewItem(null);
+        }}
+      >
+        <DialogContent className="nanum-dialog">
+          <DialogHeader>
+            <DialogTitle>나눔 상대 매너 평가</DialogTitle>
+            <DialogDescription>
+              평가값과 시각을 서버에 저장하며, 상대 프로필에는 합산 점수와 받은
+              평가 수만 표시됩니다. 평가자 이름과 개별 평가는 공개되지 않습니다.
+              계정·정보 삭제 시 관련 평가도 삭제됩니다.
+            </DialogDescription>
+          </DialogHeader>
+          <p className="subtle">
+            {reviewItem ? itemName(reviewItem) : ''} · 한 나눔에 한 번만 평가할
+            수 있어요.
+          </p>
+          <fieldset className="manner-options" aria-label="매너 평가 선택">
+            {MANNER_OPTIONS.map((option) => (
+              <Button
+                key={option.value}
+                variant={reviewRating === option.value ? 'default' : 'outline'}
+                aria-pressed={reviewRating === option.value}
+                onClick={() => setReviewRating(option.value)}
+                disabled={busy}
+              >
+                <span>
+                  {option.label} <small>{option.change}</small>
+                </span>
+                <small>{option.description}</small>
+              </Button>
+            ))}
+          </fieldset>
+          {formError && (
+            <p className="form-error" role="alert">
+              {formError}
+            </p>
+          )}
+          <Button
+            disabled={busy || reviewRating === null || !reviewItem}
+            onClick={() => {
+              if (reviewItem && reviewRating !== null)
+                void act(
+                  {
+                    type: 'rate-manners',
+                    itemId: reviewItem,
+                    rating: reviewRating,
+                    reviewConsent: true,
+                    noticeVersion: MANNER_NOTICE_VERSION,
+                  },
+                  '매너 평가를 저장했습니다.',
+                )
+                  .then(() => setReviewItem(null))
+                  .catch(() => {});
+            }}
+          >
+            {busy ? (
+              <LoaderCircle className="spin" size={16} />
+            ) : (
+              <Check size={16} />
+            )}{' '}
+            동의하고 평가 저장
+          </Button>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

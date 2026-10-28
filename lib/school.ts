@@ -87,7 +87,12 @@ export function schoolStateForUser(state: State, user: SchoolUser): State {
     people: state.people.map((person, i) =>
       visible.has(person.id)
         ? person
-        : { id: person.id, name: `학생 ${i + 1}`, zone: person.zone },
+        : {
+            id: person.id,
+            name: `학생 ${i + 1}`,
+            zone: person.zone,
+            ...(person.manners ? { manners: person.manners } : {}),
+          },
     ),
   };
 }

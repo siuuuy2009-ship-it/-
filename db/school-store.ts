@@ -22,6 +22,11 @@ import {
   type SignupConsent,
 } from '../lib/consent.ts';
 import { parseStudentNumber } from '../lib/domain.ts';
+import {
+  mannerSummary,
+  mannerTarget,
+  MANNER_NOTICE_VERSION,
+} from '../lib/manners.ts';
 
 type Account = SchoolUser & {
   passwordHash: string | null;
@@ -61,11 +66,18 @@ export function createSchoolStore(query: Query) {
         token_hash TEXT PRIMARY KEY, school_id UUID NOT NULL REFERENCES nanum_private.schools(id),
         expires BIGINT NOT NULL, used_at BIGINT, used_by UUID
       );
+      CREATE TABLE IF NOT EXISTS nanum_private.manner_reviews (
+        school_id UUID NOT NULL REFERENCES nanum_private.schools(id), item_id TEXT NOT NULL,
+        rater_id UUID NOT NULL REFERENCES nanum_private.accounts(id), target_id UUID NOT NULL REFERENCES nanum_private.accounts(id),
+        rating INTEGER NOT NULL CHECK (rating IN (-1, 0, 1)), notice_version TEXT NOT NULL, created_at BIGINT NOT NULL,
+        PRIMARY KEY (school_id, item_id, rater_id), CHECK (rater_id <> target_id)
+      );
       ALTER TABLE nanum_private.schools ENABLE ROW LEVEL SECURITY;
       ALTER TABLE nanum_private.accounts ENABLE ROW LEVEL SECURITY;
       ALTER TABLE nanum_private.school_sessions ENABLE ROW LEVEL SECURITY;
       ALTER TABLE nanum_private.school_limits ENABLE ROW LEVEL SECURITY;
       ALTER TABLE nanum_private.signup_invitations ENABLE ROW LEVEL SECURITY;
+      ALTER TABLE nanum_private.manner_reviews ENABLE ROW LEVEL SECURITY;
     END $school_setup$`).catch((error: unknown) => {
       ready = undefined;
       throw error;
@@ -334,17 +346,81 @@ export function createSchoolStore(query: Query) {
     },
     async snapshot(user: SchoolUser) {
       const snapshot = await find(user.schoolId);
-      return { ...snapshot, state: schoolStateForUser(snapshot.state, user) };
+      const totals = await query(
+        'SELECT target_id, SUM(rating) AS total, COUNT(*) AS count FROM nanum_private.manner_reviews WHERE school_id = $1 GROUP BY target_id',
+        [user.schoolId],
+      );
+      const own = await query(
+        'SELECT item_id, rating FROM nanum_private.manner_reviews WHERE school_id = $1 AND rater_id = $2',
+        [user.schoolId, user.id],
+      );
+      const state: State = {
+        ...snapshot.state,
+        people: snapshot.state.people.map((person) => {
+          const total = totals.find((row) => row.target_id === person.id);
+          return {
+            ...person,
+            manners: mannerSummary(
+              Number(total?.total ?? 0),
+              Number(total?.count ?? 0),
+            ),
+          };
+        }),
+      };
+      return {
+        ...snapshot,
+        state: schoolStateForUser(state, user),
+        mannerRatings: Object.fromEntries(
+          own.map((row) => [String(row.item_id), Number(row.rating)]),
+        ) as Record<string, number>,
+      };
     },
     async command(user: SchoolUser, command: Command, revision: number) {
       const snapshot = await find(user.schoolId);
       if (snapshot.revision !== revision) throw new SchoolConflict();
+      if (command.type === 'rate-manners') {
+        if (user.role !== 'student')
+          throw new DomainError('직접 나눔에 참여한 학생만 평가할 수 있어요.');
+        if (
+          command.reviewConsent !== true ||
+          command.noticeVersion !== MANNER_NOTICE_VERSION
+        )
+          throw new DomainError('매너 평가 저장 안내를 확인해 주세요.');
+        if (![1, 0, -1].includes(command.rating as number))
+          throw new DomainError('매너 평가를 선택해 주세요.');
+        const target = mannerTarget(snapshot.state, user.id, command.itemId);
+        const existing = await query(
+          'SELECT rating FROM nanum_private.manner_reviews WHERE school_id = $1 AND item_id = $2 AND rater_id = $3',
+          [user.schoolId, command.itemId, user.id],
+        );
+        if (existing.length)
+          throw new DomainError('이 나눔은 이미 평가했어요.');
+        const rows = await query(
+          `WITH changed AS (
+          UPDATE nanum_private.schools SET revision = revision + 1 WHERE id = $1 AND revision = $2
+          AND NOT EXISTS (SELECT 1 FROM nanum_private.manner_reviews WHERE school_id = $1 AND item_id = $3 AND rater_id = $4) RETURNING id
+        ) INSERT INTO nanum_private.manner_reviews (school_id, item_id, rater_id, target_id, rating, notice_version, created_at)
+          SELECT id, $3, $4, $5, $6, $7, $8 FROM changed RETURNING item_id`,
+          [
+            user.schoolId,
+            revision,
+            command.itemId,
+            user.id,
+            target,
+            command.rating,
+            MANNER_NOTICE_VERSION,
+            Date.now(),
+          ],
+        );
+        if (!rows.length) throw new SchoolConflict();
+        return this.snapshot(user);
+      }
       const authorized = authorizeSchoolCommand(snapshot.state, command, user);
       let state = applyCommand(snapshot.state, authorized);
       if (command.type === 'new-event')
         state = { ...state, people: snapshot.state.people };
       await update(user.schoolId, revision, state);
-      return { state: schoolStateForUser(state, user), revision: revision + 1 };
+      return this.snapshot(user);
     },
     async roster(user: SchoolUser): Promise<RosterMember[]> {
       await initialize();
@@ -487,6 +563,8 @@ export function createSchoolStore(query: Query) {
         DELETE FROM nanum_private.school_sessions WHERE account_id = $4 AND EXISTS (SELECT 1 FROM changed)
       ), invitations AS (
         DELETE FROM nanum_private.signup_invitations WHERE used_by = $4 AND EXISTS (SELECT 1 FROM changed)
+      ), reviews AS (
+        DELETE FROM nanum_private.manner_reviews WHERE (rater_id = $4 OR target_id = $4) AND EXISTS (SELECT 1 FROM changed)
       ) DELETE FROM nanum_private.accounts WHERE id = $4 AND school_id IN (SELECT id FROM changed) AND role = 'student' RETURNING id`,
         [JSON.stringify(state), user.schoolId, snapshot.revision, user.id],
       );

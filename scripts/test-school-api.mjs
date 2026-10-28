@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { CONSENT_VERSION } from '../lib/consent.ts';
+import { MANNER_NOTICE_VERSION } from '../lib/manners.ts';
 
 const base = process.env.TEST_BASE_URL ?? 'http://127.0.0.1:3000';
 const password = randomBytes(24).toString('base64url');
@@ -96,6 +97,14 @@ await command(recipient.cookie, {
 });
 await command(recipient.cookie, { type: 'close' }, 400);
 await command(recipient.cookie, { type: 'delete-item', itemId: item.id }, 400);
+const review = {
+  type: 'rate-manners',
+  itemId: item.id,
+  rating: 1,
+  reviewConsent: true,
+  noticeVersion: MANNER_NOTICE_VERSION,
+};
+await command(recipient.cookie, review, 400);
 await command(admin.cookie, { type: 'close' });
 await command(admin.cookie, { type: 'confirm' });
 const result = await snapshot(recipient.cookie);
@@ -106,6 +115,15 @@ assert.equal(
   (await snapshot(donor.cookie)).state.matches[0].status,
   'delivered',
 );
+await command(recipient.cookie, review);
+assert.equal(
+  (await snapshot(donor.cookie)).state.people.find(
+    (person) => person.id === donor.data.user.id,
+  ).manners.score,
+  52,
+);
+await command(recipient.cookie, review, 400);
+await command(donor.cookie, { ...review, rating: 0 });
 await send({ action: 'logout' }, recipient.cookie);
 assert.equal(
   (

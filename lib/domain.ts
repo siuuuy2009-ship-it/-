@@ -14,6 +14,7 @@ export type Person = {
   name: string;
   studentNumber?: string;
   zone: Zone;
+  manners?: { score: number; reviewCount: number };
 };
 export type Item = {
   id: string;
