@@ -1,5 +1,6 @@
 import { DomainError, parseStudentNumber, type Command } from '../domain.ts';
-import { parseRoster, type SchoolUser } from '../school.ts';
+import { type SchoolUser } from '../school.ts';
+import { CONSENT_VERSION, requireConsent } from '../consent.ts';
 import { hashPassword, checkPassword } from './passwords.ts';
 import {
   SchoolConflict,
@@ -108,6 +109,8 @@ export function createSchoolHandlers(getStore: () => SchoolStore) {
         }
         if (!body || typeof body !== 'object' || Array.isArray(body))
           return reply({ error: '요청을 확인해 주세요.' }, 400);
+        if (body.action === 'activate' || body.action === 'create-school')
+          requireConsent(body.consentAccepted, body.consentVersion);
         const store = getStore();
         const ip = request.headers.get('x-real-ip') ?? 'unknown';
         if (
@@ -146,10 +149,18 @@ export function createSchoolHandlers(getStore: () => SchoolStore) {
             await store.limit(`activate:${code.slice(0, 48)}`, 12);
             if (!student || !/^[a-f0-9]{48}$/.test(code))
               throw new DomainError('학번과 초대코드를 확인해 주세요.');
-            const user = await store.activate(
+            const name = typeof body.name === 'string' ? body.name.trim() : '';
+            if (
+              !name ||
+              name.length > 20 ||
+              Array.from(name).some((char) => char.charCodeAt(0) < 32)
+            )
+              throw new DomainError('본인 이름을 1~20자로 입력해 주세요.');
+            const user = await store.enroll(
               code,
               student.studentNumber,
               await hashPassword(body.password),
+              { accepted: true, version: CONSENT_VERSION, name },
             );
             if (!user)
               throw new DomainError(
@@ -187,6 +198,17 @@ export function createSchoolHandlers(getStore: () => SchoolStore) {
               },
               401,
             );
+          if (
+            account.role === 'student' &&
+            account.consentVersion !== CONSENT_VERSION
+          )
+            return reply(
+              {
+                error:
+                  '운영자에게 초대코드를 재발급받고 개인정보 안내에 동의한 뒤 다시 가입해 주세요.',
+              },
+              403,
+            );
           const { passwordHash: _, ...user } = account;
           return await signedIn(store, request, user);
         }
@@ -214,15 +236,43 @@ export function createSchoolHandlers(getStore: () => SchoolStore) {
             ),
           );
         }
+        if (body.action === 'withdraw') {
+          if (user.role !== 'student' || body.deleteConfirmed !== true)
+            return reply(
+              { error: '학생 본인의 계정 삭제를 확인해 주세요.' },
+              400,
+            );
+          await store.limit(`withdraw:${user.id}`, 8);
+          const account = await store.findAccount(
+            user.schoolCode,
+            user.loginId,
+          );
+          if (
+            !(await checkPassword(body.password, account?.passwordHash ?? null))
+          )
+            return reply({ error: '현재 비밀번호를 확인해 주세요.' }, 401);
+          await store.withdraw(user);
+          return reply({ user: null }, 200, sessionCookie(request, ''));
+        }
         if (user.role !== 'admin')
           return reply({ error: '운영자만 할 수 있어요.' }, 403);
         if (body.action === 'import-roster')
+          return reply(
+            {
+              error:
+                '학생 본인의 동의 전에는 명단을 미리 등록할 수 없어요. 개인정보 없는 초대코드를 발급해 주세요.',
+            },
+            400,
+          );
+        if (body.action === 'issue-invites') {
+          await store.limit(`issue-invites:${user.schoolId}`, 10);
           return reply({
-            invitations: await store.importRoster(
+            invitations: await store.issueInvitations(
               user,
-              parseRoster(body.roster),
+              body.count as number,
             ),
           });
+        }
         if (
           body.action === 'reissue' &&
           typeof body.accountId === 'string' &&

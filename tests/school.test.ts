@@ -14,6 +14,7 @@ import {
   type Invitation,
 } from '../lib/school.ts';
 import type { State, Command } from '../lib/domain.ts';
+import { CONSENT_VERSION } from '../lib/consent.ts';
 
 void test('passwords use independent salts and never store the original value', async () => {
   const password = 'test-password-strong';
@@ -66,7 +67,24 @@ void test('school accounts: one-time invitation, shared data, server permissions
           'Content-Type': 'application/json',
           Cookie: cookie,
         },
-        body: JSON.stringify(body),
+        body: JSON.stringify({
+          ...(['activate', 'create-school'].includes(
+            String((body as Record<string, unknown>).action),
+          )
+            ? {
+                consentAccepted: true,
+                consentVersion: CONSENT_VERSION,
+                name: (
+                  {
+                    '1101': '학생가',
+                    '1102': '학생나',
+                    '1103': '학생다',
+                  } as Record<string, string>
+                )[String((body as Record<string, unknown>).loginId)],
+              }
+            : {}),
+          ...(body as Record<string, unknown>),
+        }),
       }),
     );
     assert.equal(
@@ -102,14 +120,19 @@ void test('school accounts: one-time invitation, shared data, server permissions
     created.response.headers.get('set-cookie')!,
     /HttpOnly; SameSite=Strict;.*; Secure$/,
   );
-  const imported = await post(
+  await post(
     {
       action: 'import-roster',
       roster: '1101,학생가\n1102,학생나\n1103,학생다',
     },
     created.cookie,
+    400,
   );
-  const invitations = imported.data.invitations as Invitation[];
+  // Legacy fixture verifies that pre-consent deployments can still activate existing invitations.
+  const invitations = await store.importRoster(
+    admin,
+    parseRoster('1101,학생가\n1102,학생나\n1103,학생다'),
+  );
   assert.equal(invitations.length, 3);
   assert.notEqual(invitations[0].code, invitations[1].code);
   const stored = await query(
@@ -252,7 +275,13 @@ void test('school accounts: one-time invitation, shared data, server permissions
       );
       const hash = await hashPassword(password);
       const activated = await Promise.all(
-        [1, 2].map(() => store.activate(invitations[2].code, '1103', hash)),
+        [1, 2].map(() =>
+          store.activate(invitations[2].code, '1103', hash, {
+            accepted: true,
+            version: CONSENT_VERSION,
+            name: '학생다',
+          }),
+        ),
       );
       assert.equal(activated.filter(Boolean).length, 1);
     },
@@ -330,9 +359,9 @@ void test('school accounts: one-time invitation, shared data, server permissions
       assert.ok(!JSON.stringify(active).includes(renewed.cookie.split('=')[1]));
       await query('UPDATE nanum_private.school_sessions SET expires = 0');
       assert.equal((await get('workspace', renewed.cookie)).status, 401);
-    const loggedOut = await post({ action: 'logout' }, renewed.cookie);
-    assert.match(loggedOut.response.headers.get('set-cookie')!, /Max-Age=0/);
-    await post({ action: 'logout' });
+      const loggedOut = await post({ action: 'logout' }, renewed.cookie);
+      assert.match(loggedOut.response.headers.get('set-cookie')!, /Max-Age=0/);
+      await post({ action: 'logout' });
     },
   );
 

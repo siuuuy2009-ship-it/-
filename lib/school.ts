@@ -14,7 +14,11 @@ export type SchoolUser = {
   role: 'admin' | 'student';
 };
 export type RosterEntry = { studentNumber: string; name: string };
-export type RosterMember = RosterEntry & { id: string; active: boolean };
+export type RosterMember = RosterEntry & {
+  id: string;
+  active: boolean;
+  consentedAt?: number | null;
+};
 export type Invitation = RosterEntry & { code: string };
 
 export function parseRoster(value: unknown): RosterEntry[] {

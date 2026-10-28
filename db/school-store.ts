@@ -16,10 +16,17 @@ import {
 } from '../lib/school.ts';
 import { secretToken, tokenHash } from '../lib/server/passwords.ts';
 import type { Query } from './postgres-workspaces.ts';
+import {
+  CONSENT_VERSION,
+  requireConsent,
+  type SignupConsent,
+} from '../lib/consent.ts';
+import { parseStudentNumber } from '../lib/domain.ts';
 
 type Account = SchoolUser & {
   passwordHash: string | null;
   sessionVersion: number;
+  consentVersion: string | null;
 };
 type Snapshot = { state: State; revision: number };
 export class SchoolConflict extends Error {}
@@ -48,10 +55,17 @@ export function createSchoolStore(query: Query) {
       CREATE TABLE IF NOT EXISTS nanum_private.school_limits (
         key TEXT PRIMARY KEY, count INTEGER NOT NULL, expires BIGINT NOT NULL
       );
+      ALTER TABLE nanum_private.accounts ADD COLUMN IF NOT EXISTS consent_version TEXT;
+      ALTER TABLE nanum_private.accounts ADD COLUMN IF NOT EXISTS consented_at BIGINT;
+      CREATE TABLE IF NOT EXISTS nanum_private.signup_invitations (
+        token_hash TEXT PRIMARY KEY, school_id UUID NOT NULL REFERENCES nanum_private.schools(id),
+        expires BIGINT NOT NULL, used_at BIGINT, used_by UUID
+      );
       ALTER TABLE nanum_private.schools ENABLE ROW LEVEL SECURITY;
       ALTER TABLE nanum_private.accounts ENABLE ROW LEVEL SECURITY;
       ALTER TABLE nanum_private.school_sessions ENABLE ROW LEVEL SECURITY;
       ALTER TABLE nanum_private.school_limits ENABLE ROW LEVEL SECURITY;
+      ALTER TABLE nanum_private.signup_invitations ENABLE ROW LEVEL SECURITY;
     END $school_setup$`).catch((error: unknown) => {
       ready = undefined;
       throw error;
@@ -67,6 +81,7 @@ export function createSchoolStore(query: Query) {
     role: row.role as 'admin' | 'student',
     passwordHash: row.password_hash as string | null,
     sessionVersion: Number(row.session_version),
+    consentVersion: row.consent_version as string | null,
   });
   const find = async (schoolId: string): Promise<Snapshot> => {
     await initialize();
@@ -112,8 +127,8 @@ export function createSchoolStore(query: Query) {
       await query(
         `WITH school AS (
         INSERT INTO nanum_private.schools (id, code, state, created_at) VALUES ($1, $2, $3, $4) RETURNING id
-      ) INSERT INTO nanum_private.accounts (id, school_id, login_id, name, role, password_hash)
-        SELECT $5, id, $6, $7, 'admin', $8 FROM school`,
+      ) INSERT INTO nanum_private.accounts (id, school_id, login_id, name, role, password_hash, consent_version, consented_at)
+        SELECT $5, id, $6, $7, 'admin', $8, $9, $4 FROM school`,
         [
           schoolId,
           schoolCode,
@@ -123,6 +138,7 @@ export function createSchoolStore(query: Query) {
           loginId,
           '운영자',
           passwordHash,
+          CONSENT_VERSION,
         ],
       );
       return {
@@ -134,6 +150,7 @@ export function createSchoolStore(query: Query) {
         role: 'admin',
         passwordHash,
         sessionVersion: 0,
+        consentVersion: CONSENT_VERSION,
       };
     },
     async findAccount(
@@ -151,16 +168,125 @@ export function createSchoolStore(query: Query) {
       code: string,
       loginId: string,
       passwordHash: string,
+      consent: SignupConsent,
     ): Promise<Account | null> {
+      requireConsent(consent.accepted, consent.version);
       await initialize();
       const [row] = await query(
         `WITH activated AS (
-        UPDATE nanum_private.accounts SET password_hash = $1, invite_hash = NULL, invite_expires = NULL, session_version = session_version + 1
-        WHERE invite_hash = $2 AND invite_expires > $3 AND login_id = $4 RETURNING *
+        UPDATE nanum_private.accounts SET password_hash = $1, invite_hash = NULL, invite_expires = NULL, session_version = session_version + 1,
+          consent_version = $5, consented_at = $3
+        WHERE invite_hash = $2 AND invite_expires > $3 AND login_id = $4 AND name = $6 RETURNING *
       ) SELECT a.*, s.code FROM activated a JOIN nanum_private.schools s ON s.id = a.school_id`,
-        [passwordHash, tokenHash(code), Date.now(), loginId],
+        [
+          passwordHash,
+          tokenHash(code),
+          Date.now(),
+          loginId,
+          consent.version,
+          consent.name,
+        ],
       );
       if (!row) return null;
+      return account(row);
+    },
+    async issueInvitations(
+      user: SchoolUser,
+      count: number,
+    ): Promise<{ code: string }[]> {
+      if (user.role !== 'admin')
+        throw new DomainError('운영자만 초대코드를 발급할 수 있어요.');
+      if (!Number.isInteger(count) || count < 1 || count > 288)
+        throw new DomainError('초대코드는 1~288개까지 발급할 수 있어요.');
+      await initialize();
+      const codes = Array.from({ length: count }, () => ({
+        code: secretToken(),
+      }));
+      await query(
+        `INSERT INTO nanum_private.signup_invitations (token_hash, school_id, expires)
+        SELECT value, $1, $2 FROM jsonb_array_elements_text($3::jsonb)`,
+        [
+          user.schoolId,
+          Date.now() + 2592000000,
+          JSON.stringify(codes.map((entry) => tokenHash(entry.code))),
+        ],
+      );
+      return codes;
+    },
+    async enroll(
+      code: string,
+      loginId: string,
+      passwordHash: string,
+      consent: SignupConsent,
+    ): Promise<Account | null> {
+      requireConsent(consent.accepted, consent.version);
+      if (
+        !parseStudentNumber(loginId) ||
+        !consent.name.trim() ||
+        consent.name.trim().length > 20
+      )
+        throw new DomainError('이름과 네 자리 학번을 확인해 주세요.');
+      await initialize();
+      const [invitation] = await query(
+        'SELECT school_id FROM nanum_private.signup_invitations WHERE token_hash = $1 AND expires > $2 AND used_at IS NULL',
+        [tokenHash(code), Date.now()],
+      );
+      if (!invitation)
+        return this.activate(code, loginId, passwordHash, consent);
+      const schoolId = String(invitation.school_id);
+      const existing = await this.findAccount(
+        (
+          await query('SELECT code FROM nanum_private.schools WHERE id = $1', [
+            schoolId,
+          ])
+        )[0].code as string,
+        loginId,
+      );
+      if (existing)
+        throw new DomainError(
+          '이미 등록된 학번입니다. 로그인하거나 운영자에게 문의해 주세요.',
+        );
+      const snapshot = await find(schoolId);
+      if (snapshot.state.people.length >= 288)
+        throw new DomainError('이 학교는 등록 가능한 학생 수를 초과했어요.');
+      const id = randomUUID();
+      const now = Date.now();
+      const name = consent.name.trim();
+      const state: State = {
+        ...snapshot.state,
+        people: [
+          ...snapshot.state.people,
+          { id, name, studentNumber: loginId, zone: '본관' },
+        ],
+      };
+      const [row] = await query(
+        `WITH changed AS (
+        UPDATE nanum_private.schools SET state = $1, revision = revision + 1
+        WHERE id = $2 AND revision = $3
+          AND EXISTS (SELECT 1 FROM nanum_private.signup_invitations WHERE token_hash = $4 AND school_id = $2 AND used_at IS NULL AND expires > $5)
+          AND NOT EXISTS (SELECT 1 FROM nanum_private.accounts WHERE school_id = $2 AND login_id = $6)
+        RETURNING id, code
+      ), used AS (
+        UPDATE nanum_private.signup_invitations SET used_at = $5, used_by = $7
+        FROM changed WHERE token_hash = $4 AND school_id = changed.id AND used_at IS NULL RETURNING school_id
+      ), added AS (
+        INSERT INTO nanum_private.accounts (id, school_id, login_id, name, role, password_hash, consent_version, consented_at)
+        SELECT $7, school_id, $6, $8, 'student', $9, $10, $5 FROM used RETURNING *
+      ) SELECT a.*, c.code FROM added a JOIN changed c ON a.school_id = c.id`,
+        [
+          JSON.stringify(state),
+          schoolId,
+          snapshot.revision,
+          tokenHash(code),
+          now,
+          loginId,
+          id,
+          name,
+          passwordHash,
+          consent.version,
+        ],
+      );
+      if (!row) throw new SchoolConflict();
       return account(row);
     },
     async session(token: string): Promise<SchoolUser | null> {
@@ -168,11 +294,17 @@ export function createSchoolStore(query: Query) {
       const [row] = await query(
         `SELECT a.*, s.code FROM nanum_private.school_sessions t
         JOIN nanum_private.accounts a ON a.id = t.account_id JOIN nanum_private.schools s ON s.id = a.school_id
-        WHERE t.token_hash = $1 AND t.expires > $2 AND t.session_version = a.session_version`,
-        [tokenHash(token), Date.now()],
+        WHERE t.token_hash = $1 AND t.expires > $2 AND t.session_version = a.session_version
+        AND (a.role = 'admin' OR a.consent_version = $3)`,
+        [tokenHash(token), Date.now(), CONSENT_VERSION],
       );
       if (!row) return null;
-      const { passwordHash: _, sessionVersion: __, ...user } = account(row);
+      const {
+        passwordHash: _,
+        sessionVersion: __,
+        consentVersion: ___,
+        ...user
+      } = account(row);
       return user;
     },
     async startSession(
@@ -219,7 +351,7 @@ export function createSchoolStore(query: Query) {
       if (user.role !== 'admin')
         throw new DomainError('운영자만 명단을 볼 수 있어요.');
       const rows = await query(
-        `SELECT id, login_id, name, password_hash IS NOT NULL AS active FROM nanum_private.accounts WHERE school_id = $1 AND role = 'student' ORDER BY login_id`,
+        `SELECT id, login_id, name, password_hash IS NOT NULL AS active, consented_at FROM nanum_private.accounts WHERE school_id = $1 AND role = 'student' ORDER BY login_id`,
         [user.schoolId],
       );
       return rows.map((row) => ({
@@ -227,6 +359,7 @@ export function createSchoolStore(query: Query) {
         studentNumber: String(row.login_id),
         name: String(row.name),
         active: Boolean(row.active),
+        consentedAt: row.consented_at ? Number(row.consented_at) : null,
       }));
     },
     async importRoster(
@@ -322,6 +455,42 @@ export function createSchoolStore(query: Query) {
         name: String(row.name),
         code,
       };
+    },
+    async withdraw(user: SchoolUser) {
+      if (user.role !== 'student')
+        throw new DomainError('학생 계정에서 사용할 수 있어요.');
+      const snapshot = await find(user.schoolId);
+      const removedItems = new Set(
+        snapshot.state.items
+          .filter((i) => i.ownerId === user.id)
+          .map((i) => i.id),
+      );
+      const state: State = {
+        ...snapshot.state,
+        people: snapshot.state.people.filter((p) => p.id !== user.id),
+        items: snapshot.state.items.filter((i) => !removedItems.has(i.id)),
+        applications: snapshot.state.applications
+          .filter((a) => a.participantId !== user.id)
+          .map((a) => ({
+            ...a,
+            itemIds: a.itemIds.filter((id) => !removedItems.has(id)),
+          }))
+          .filter((a) => a.itemIds.length),
+        matches: snapshot.state.matches.filter(
+          (m) => m.participantId !== user.id && !removedItems.has(m.itemId),
+        ),
+      };
+      const rows = await query(
+        `WITH changed AS (
+        UPDATE nanum_private.schools SET state = $1, revision = revision + 1 WHERE id = $2 AND revision = $3 RETURNING id
+      ), sessions AS (
+        DELETE FROM nanum_private.school_sessions WHERE account_id = $4 AND EXISTS (SELECT 1 FROM changed)
+      ), invitations AS (
+        DELETE FROM nanum_private.signup_invitations WHERE used_by = $4 AND EXISTS (SELECT 1 FROM changed)
+      ) DELETE FROM nanum_private.accounts WHERE id = $4 AND school_id IN (SELECT id FROM changed) AND role = 'student' RETURNING id`,
+        [JSON.stringify(state), user.schoolId, snapshot.revision, user.id],
+      );
+      if (!rows.length) throw new SchoolConflict();
     },
   };
 }

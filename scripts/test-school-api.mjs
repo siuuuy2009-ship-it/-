@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
+import { CONSENT_VERSION } from '../lib/consent.ts';
 
 const base = process.env.TEST_BASE_URL ?? 'http://127.0.0.1:3000';
 const password = randomBytes(24).toString('base64url');
@@ -29,26 +30,34 @@ const admin = await send({
   title: '자동 검증용 나눔함',
   loginId: 'test-admin',
   password,
+  consentAccepted: true,
+  consentVersion: CONSENT_VERSION,
 });
 const imported = await send(
-  { action: 'import-roster', roster: '1101,검증학생가\n1102,검증학생나' },
+  { action: 'issue-invites', count: 2 },
   admin.cookie,
 );
 const activate = async (i) =>
   send({
     action: 'activate',
-    loginId: imported.data.invitations[i].studentNumber,
+    loginId: ['1101', '1102'][i],
+    name: ['검증학생가', '검증학생나'][i],
     code: imported.data.invitations[i].code,
     password,
+    consentAccepted: true,
+    consentVersion: CONSENT_VERSION,
   });
 const donor = await activate(0);
 const recipient = await activate(1);
 await send(
   {
     action: 'activate',
-    loginId: imported.data.invitations[0].studentNumber,
+    loginId: '1101',
+    name: '검증학생가',
     code: imported.data.invitations[0].code,
     password,
+    consentAccepted: true,
+    consentVersion: CONSENT_VERSION,
   },
   '',
   400,
@@ -106,6 +115,23 @@ assert.equal(
   ).status,
   401,
 );
+await send(
+  { action: 'withdraw', password, deleteConfirmed: true },
+  donor.cookie,
+);
+assert.equal(
+  (
+    await fetch(`${base}/api/school?action=workspace`, {
+      headers: { Cookie: donor.cookie },
+    })
+  ).status,
+  401,
+);
+assert.ok(
+  !(await snapshot(admin.cookie)).state.people.some(
+    (person) => person.id === donor.data.user.id,
+  ),
+);
 console.log(
-  'School API checks passed: invitations, login, sharing across accounts, ownership enforcement, maximum matching, delivery and logout.',
+  'School API checks passed: consent-first invitations, login, sharing, ownership, maximum matching, delivery, logout and withdrawal deletion.',
 );

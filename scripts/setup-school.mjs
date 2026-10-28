@@ -1,6 +1,6 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
-import { randomBytes } from 'node:crypto';
 import { basename, extname, resolve, sep } from 'node:path';
+import { parseRoster } from '../lib/school.ts';
 
 const base = process.env.SETUP_BASE_URL ?? 'https://dasi-nanum.vercel.app';
 const directory = resolve('work/school-roster');
@@ -48,23 +48,9 @@ if (saved) {
     password: saved.password,
   });
 } else {
-  const password = randomBytes(24).toString('base64url');
-  session = await send({
-    action: 'create-school',
-    title: '우리 학교 나눔 행사',
-    loginId: 'admin',
-    password,
-  });
-  saved = {
-    base,
-    schoolCode: session.data.user.schoolCode,
-    loginId: 'admin',
-    password,
-  };
-  await writeFile(credentialsPath, JSON.stringify(saved, null, 2), {
-    mode: 0o600,
-    flag: 'wx',
-  });
+  throw new Error(
+    'Create the operator account in the app after reviewing and accepting its privacy notice.',
+  );
 }
 const link = `${base}/?school=${saved.schoolCode}`;
 await writeFile(
@@ -84,18 +70,28 @@ if (operatorOnly) {
   process.exit(0);
 }
 const roster = await readFile(rosterPath, 'utf8');
+const entries = parseRoster(roster);
 const invitationFile = `${basename(rosterPath, extname(rosterPath)).replace(/-명단$/, '')}-학생별초대코드.csv`;
+try {
+  await readFile(resolve(directory, invitationFile));
+  throw new Error(
+    'Invitation export already exists. Keep the original codes or reissue explicitly in the app.',
+  );
+} catch (error) {
+  if (error.code !== 'ENOENT') throw error;
+}
 const imported = await send(
-  { action: 'import-roster', roster },
+  // Only the count is sent. Names and student numbers stay on this computer.
+  { action: 'issue-invites', count: entries.length },
   session.cookie,
 );
 const invitations = imported.data.invitations;
 if (invitations.length) {
   const rows = [
     ['학번', '이름', '초대코드', '학교코드', '가입링크'],
-    ...invitations.map((entry) => [
-      entry.studentNumber,
-      entry.name,
+    ...invitations.map((entry, i) => [
+      entries[i].studentNumber,
+      entries[i].name,
       entry.code,
       saved.schoolCode,
       `${link}#invite=${entry.code}`,
@@ -117,7 +113,8 @@ await send({ action: 'logout' }, session.cookie);
 console.log(
   JSON.stringify({
     schoolUrl: link,
-    invitedStudents: invitations.length,
+    issuedCodes: invitations.length,
+    studentDataUploaded: false,
     credentialsSaved: true,
   }),
 );
