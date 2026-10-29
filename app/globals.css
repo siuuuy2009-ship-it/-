@@ -427,6 +427,93 @@ footer {
     grid-template-columns: minmax(0, 1fr) 265px;
   }
 }
+
+.demo-studio {
+  padding: 24px max(24px, calc((100vw - 1280px) /2));
+  background: #eeecff;
+  border-bottom: 1px solid #d6d1ff;
+  color: #30295e;
+}
+.demo-studio-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.demo-studio-heading p {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 13px;
+  font-weight: 650;
+  margin-bottom: 8px;
+}
+.demo-studio-heading h1 {
+  font-size: 24px;
+  font-weight: 750;
+}
+.demo-studio-notice,
+.demo-stage-description,
+.demo-actor {
+  font-size: 13px;
+  line-height: 1.7;
+  margin-top: 12px;
+}
+.demo-studio-controls {
+  display: flex;
+  gap: 18px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  margin-top: 18px;
+}
+.demo-studio-controls label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+}
+.demo-studio-controls select {
+  min-width: 210px;
+  max-width: 100%;
+  background: #fff;
+  border: 1px solid #c8c2ef;
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: #30295e;
+}
+.demo-stage-buttons {
+  border: 0;
+  padding: 0;
+  min-width: 0;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.demo-stage-buttons button {
+  font-size: 13px;
+}
+.demo-actor {
+  padding-top: 12px;
+  border-top: 1px solid #d6d1ff;
+}
+@media (max-width: 760px) {
+  .demo-studio {
+    padding: 20px 18px;
+  }
+  .demo-studio-heading h1 {
+    font-size: 21px;
+  }
+  .demo-studio-controls {
+    align-items: stretch;
+  }
+  .demo-studio-controls label {
+    width: 100%;
+  }
+  .demo-stage-buttons {
+    gap: 6px;
+  }
+}
 @media (max-width: 760px) {
   .site-header {
     padding: 15px 20px;

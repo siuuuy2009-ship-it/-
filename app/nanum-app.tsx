@@ -79,23 +79,22 @@ import {
   parseStudentNumber,
   personLabel,
   type Command,
-  type State,
   type Item,
   type Person,
 } from '@/lib/domain';
 import { maximumMatching, sequentialMatching, type Edge } from '@/lib/matching';
 import type { SchoolUser } from '@/lib/school';
+import type {
+  WorkspaceClient,
+  WorkspaceSnapshot,
+} from '@/lib/workspace-client';
 import {
   mannerSummary,
   MANNER_OPTIONS,
   MANNER_NOTICE_VERSION,
 } from '@/lib/manners';
 
-type Snapshot = {
-  state: State;
-  revision: number;
-  mannerRatings?: Record<string, number>;
-};
+type Snapshot = WorkspaceSnapshot;
 type Confirm = { title: string; description: string; command: Command };
 type Modal = 'item' | 'person' | 'request' | 'detail' | 'event' | null;
 const categoryIcons = [BookOpen, Shirt, PencilRuler, Coffee];
@@ -154,9 +153,13 @@ function MannerBadge({ person }: { person?: Person }) {
 export default function NanumApp({
   user,
   onSessionExpired,
+  workspace,
+  initialTab = 'items',
 }: {
   user?: SchoolUser;
   onSessionExpired?: () => void;
+  workspace?: WorkspaceClient;
+  initialTab?: string;
 } = {}) {
   const isAdmin = !user || user.role === 'admin';
   const endpoint = user ? '/api/school?action=workspace' : '/api/workspace';
@@ -168,7 +171,7 @@ export default function NanumApp({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
-  const [tab, setTab] = useState('items');
+  const [tab, setTab] = useState(initialTab);
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState('전체');
   const [modal, setModal] = useState<Modal>(null);
@@ -185,6 +188,12 @@ export default function NanumApp({
     setLoading(true);
     setError('');
     try {
+      if (workspace) {
+        const data = await workspace.load();
+        setSnapshot(data);
+        current.current = data;
+        return;
+      }
       const response = await fetch(endpoint, { cache: 'no-store' });
       if (response.status === 401) onSessionExpired?.();
       const data = (await response.json()) as Snapshot & { error?: string };
@@ -196,7 +205,7 @@ export default function NanumApp({
     } finally {
       setLoading(false);
     }
-  }, [endpoint, onSessionExpired]);
+  }, [endpoint, onSessionExpired, workspace]);
   useEffect(() => {
     void Promise.resolve().then(load);
   }, [load]);
@@ -210,6 +219,13 @@ export default function NanumApp({
       setFormError('');
       setNotice('');
       try {
+        if (workspace) {
+          const data = await workspace.save(command, current.current.revision);
+          current.current = data;
+          setSnapshot(data);
+          setNotice(message);
+          return data;
+        }
         const response = await fetch(user ? '/api/school' : '/api/workspace', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -243,7 +259,7 @@ export default function NanumApp({
         setBusy(false);
       }
     },
-    [load, user, onSessionExpired],
+    [load, user, onSessionExpired, workspace],
   );
   const perform = (command: Command, message?: string) => {
     void act(command, message).catch(() => {});
@@ -594,8 +610,9 @@ export default function NanumApp({
             </div>
             {state.isDemo && (
               <p className="demo-note">
-                가상 학생과 물품으로 시작하는 시연입니다. 실제 자료는 ‘새
-                행사’에서 등록해 주세요.
+                {workspace
+                  ? '가상 학생과 물품으로 구성한 캡처용 예시입니다. 실제 나눔은 상단의 ‘실제 나눔함으로’에서 진행해 주세요.'
+                  : '가상 학생과 물품으로 시작하는 시연입니다. 실제 자료는 ‘새 행사’에서 등록해 주세요.'}
               </p>
             )}
             <Tabs value={tab} onValueChange={(v) => setTab(String(v))}>
@@ -1240,9 +1257,11 @@ export default function NanumApp({
         )}
         <footer>
           <span>
-            {user
-              ? '학교 나눔함은 같은 학교코드로 로그인한 학생들과 공유됩니다.'
-              : '가상 자료 시연 공간입니다.'}
+            {workspace
+              ? '캡처용 가상 자료입니다. 변경한 내용은 이 화면에서만 유지됩니다.'
+              : user
+                ? '학교 나눔함은 같은 학교코드로 로그인한 학생들과 공유됩니다.'
+                : '가상 자료 시연 공간입니다.'}
           </span>
           <span>다시, 나눔 · {isAdmin ? '운영자' : '학생'}</span>
         </footer>
@@ -1609,9 +1628,9 @@ export default function NanumApp({
           <DialogHeader>
             <DialogTitle>나눔 상대 매너 평가</DialogTitle>
             <DialogDescription>
-              평가값과 시각을 서버에 저장하며, 상대 프로필에는 합산 점수와 받은
-              평가 수만 표시됩니다. 평가자 이름과 개별 평가는 공개되지 않습니다.
-              계정·정보 삭제 시 관련 평가도 삭제됩니다.
+              {workspace
+                ? '가상 학생의 평가를 체험합니다. 이 화면에서만 점수를 계산하며 실제 계정이나 서버에는 저장하지 않습니다.'
+                : '평가값과 시각을 서버에 저장하며, 상대 프로필에는 합산 점수와 받은 평가 수만 표시됩니다. 평가자 이름과 개별 평가는 공개되지 않습니다. 계정·정보 삭제 시 관련 평가도 삭제됩니다.'}
             </DialogDescription>
           </DialogHeader>
           <p className="subtle">

@@ -19,6 +19,7 @@ import { CONSENT_NOTICE, CONSENT_VERSION } from '@/lib/consent';
 import type { SchoolUser } from '@/lib/school';
 import NanumApp from './nanum-app';
 import SchoolAdmin from './school-admin';
+import ClassroomDemoApp from './classroom-demo';
 
 export async function schoolRequest<T>(
   body: Record<string, unknown>,
@@ -35,7 +36,8 @@ export async function schoolRequest<T>(
 
 export default function SchoolApp() {
   const [initial] = useState(() => {
-    if (typeof window === 'undefined') return { schoolCode: '', invite: '' };
+    if (typeof window === 'undefined')
+      return { schoolCode: '', invite: '', demo: false };
     const url = new URL(window.location.href);
     let schoolCode = url.searchParams.get('school') ?? '';
     try {
@@ -45,15 +47,16 @@ export default function SchoolApp() {
     }
     return {
       schoolCode,
+      demo: url.searchParams.get('demo') === 'classroom',
       invite: new URLSearchParams(url.hash.slice(1)).get('invite') ?? '',
     };
   });
   const [user, setUser] = useState<SchoolUser | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!initial.demo);
   const [mode, setMode] = useState<'login' | 'activate' | 'create'>(
     initial.invite ? 'activate' : 'login',
   );
-  const [demo, setDemo] = useState(false);
+  const [demo, setDemo] = useState(initial.demo);
   const [adminOpen, setAdminOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -70,6 +73,9 @@ export default function SchoolApp() {
   const [deleteConfirmed, setDeleteConfirmed] = useState(false);
 
   useEffect(() => {
+    if (initial.demo) {
+      return;
+    }
     const url = new URL(window.location.href);
     if (initial.invite)
       window.history.replaceState(null, '', url.pathname + url.search);
@@ -84,7 +90,7 @@ export default function SchoolApp() {
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [initial.invite]);
+  }, [initial.invite, initial.demo]);
 
   function switchMode(next: typeof mode) {
     setMode(next);
@@ -174,15 +180,12 @@ export default function SchoolApp() {
 
   if (demo)
     return (
-      <>
-        <div className="account-toolbar">
-          <span>가상 자료 시연</span>
-          <Button variant="ghost" onClick={() => setDemo(false)}>
-            <ArrowLeft size={16} /> 로그인으로
-          </Button>
-        </div>
-        <NanumApp />
-      </>
+      <ClassroomDemoApp
+        onExit={() => {
+          if (initial.demo) window.location.assign(window.location.pathname);
+          else setDemo(false);
+        }}
+      />
     );
   if (loading)
     return (
@@ -202,6 +205,9 @@ export default function SchoolApp() {
             학교코드 <strong>{user.schoolCode}</strong>
           </span>
           <div className="button-row">
+            <Button variant="outline" onClick={() => setDemo(true)}>
+              보고서용 가상 시연
+            </Button>
             {user.role === 'admin' ? (
               <Button
                 variant="outline"
@@ -493,7 +499,7 @@ export default function SchoolApp() {
           {mode === 'create' ? '로그인으로' : '처음 운영하는 나눔함 만들기'}
         </Button>
         <Button variant="ghost" onClick={() => setDemo(true)}>
-          예시 행사 둘러보기
+          예시 행사 둘러보기 · 보고서용 가상 시연
         </Button>
       </div>
     </main>
