@@ -2,7 +2,7 @@ import { maximumMatching, sequentialMatching, type Edge } from './matching.ts';
 
 export const CATEGORIES = [
   '도서·참고서',
-  '교복·의류',
+  '의류·잡화',
   '학용품',
   '생활용품',
 ] as const;
@@ -103,12 +103,12 @@ export function demoState(): State {
   const titles = [
     '수학 개념 참고서 A',
     '수학 유형 참고서 B',
-    '깨끗한 생활복',
+    '여분의 옷걸이 5개',
     '접이식 독서대',
     '과학 실험 길잡이',
-    '튼튼한 실내화',
+    '미사용 공책 세트',
   ];
-  const categories = [0, 0, 1, 2, 0, 3];
+  const categories = [0, 0, 3, 2, 0, 2];
   const items: Item[] = titles.map((title, i) => ({
     id: `i${i + 1}`,
     title,
@@ -119,10 +119,10 @@ export function demoState(): State {
     description: [
       '필기 없이 깨끗해요. 개념 공부에 도움이 되었으면 좋겠어요.',
       '문제 풀이 연습용이에요. 앞부분에 연필 필기가 조금 있어요.',
-      '기숙사에서 입을 수 있는 생활복 95 사이즈예요. 세탁했어요.',
+      '기숙사 옷장이나 빨래 정리에 쓸 수 있는 옷걸이 5개예요.',
       '각도 조절이 가능하고 접어서 보관할 수 있어요.',
       '중등 과학 탐구 활동을 정리한 책이에요.',
-      '250mm 실내화예요. 사이즈를 확인해 주세요.',
+      '아직 쓰지 않은 줄 공책 3권이에요. 자습이나 수업 필기에 사용하세요.',
     ][i],
   }));
   const choices = [
