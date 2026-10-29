@@ -84,7 +84,7 @@ void test('reassignment example and longer augmenting paths', () => {
   assert.equal(demo.sequential.length, 3);
   assert.equal(demo.maximum.pairs.length, 6);
 });
-void test('own items, state and distance are hard eligibility conditions', () => {
+void test('self-requests and condition mismatch are excluded; pickup zones do not affect matching', () => {
   const state = demoState();
   state.items[0].ownerId = 'p1';
   state.items[1].condition = 1;
@@ -93,11 +93,10 @@ void test('own items, state and distance are hard eligibility conditions', () =>
     eligibleEdges(state).filter((e) => e.participantId === 'p1').length,
     0,
   );
-  state.people[1].zone = '기숙사';
-  state.applications[1].maxDistance = 400;
+  state.people[1].zone = '후관';
   assert.equal(
     eligibleEdges(state).filter((e) => e.participantId === 'p2').length,
-    0,
+    1,
   );
 });
 void test('confirmation, delivery and cancellation preserve locked vertices', () => {
@@ -138,7 +137,6 @@ void test('duplicate requests merge, deleting items removes obsolete requests', 
     participantId: 'p1',
     itemIds: ['i1', 'i1', 'i2'],
     minCondition: 1,
-    maxDistance: 500,
   });
   assert.equal(
     state.applications.filter((a) => a.participantId === 'p1').length,
@@ -153,7 +151,6 @@ void test('duplicate requests merge, deleting items removes obsolete requests', 
     participantId: 'p1',
     itemIds: [],
     minCondition: 1,
-    maxDistance: 500,
   });
   assert.ok(!state.applications.some((a) => a.participantId === 'p1'));
 });
@@ -175,28 +172,24 @@ void test('validation rejects malformed input and never mutates the input state'
       participantId: 'p7',
       itemIds: ['i1'],
       minCondition: 1,
-      maxDistance: 500,
     },
     {
       type: 'apply',
       participantId: 'p1',
       itemIds: ['missing'],
       minCondition: 1,
-      maxDistance: 500,
     },
     {
       type: 'apply',
       participantId: 'p1',
       itemIds: ['i1'],
       minCondition: 4,
-      maxDistance: 500,
     },
     {
       type: 'apply',
       participantId: 'p1',
       itemIds: ['i1'],
-      minCondition: 1,
-      maxDistance: NaN,
+      minCondition: NaN,
     },
     { type: 'unknown' },
   ];

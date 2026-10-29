@@ -74,7 +74,6 @@ import {
   CONDITIONS,
   ZONES,
   compareMatching,
-  distance,
   emptyState,
   parseStudentNumber,
   personLabel,
@@ -96,7 +95,7 @@ import {
 
 type Snapshot = WorkspaceSnapshot;
 type Confirm = { title: string; description: string; command: Command };
-type Modal = 'item' | 'person' | 'request' | 'detail' | 'event' | null;
+type Modal = 'item' | 'person' | 'request' | 'detail' | 'event' | 'need' | null;
 const categoryIcons = [BookOpen, Shirt, PencilRuler, Coffee];
 function Choice({
   label,
@@ -280,7 +279,8 @@ export default function NanumApp({
     const tools = [
       {
         name: 'get_nanum_workspace',
-        description: '현재 행사, 물품, 참여자, 신청과 확정 배정을 읽습니다.',
+        description:
+          '현재 나눔 모음, 물품, 참여자, 신청과 확정 배정을 읽습니다.',
         inputSchema: {
           type: 'object',
           properties: {},
@@ -316,9 +316,8 @@ export default function NanumApp({
             participantId: { type: 'string' },
             itemIds: { type: 'array', items: { type: 'string' }, maxItems: 80 },
             minCondition: { type: 'integer', minimum: 1, maximum: 3 },
-            maxDistance: { type: 'integer', minimum: 0, maximum: 500 },
           },
-          required: ['participantId', 'itemIds', 'minCondition', 'maxDistance'],
+          required: ['participantId', 'itemIds', 'minCondition'],
           additionalProperties: false,
         },
         annotations: { readOnlyHint: false, untrustedContentHint: true },
@@ -360,6 +359,13 @@ export default function NanumApp({
   }, [user, load]);
 
   const state = snapshot.state;
+  const displayTitle = [
+    '학기 말 함께 나눔',
+    '우리 학교 나눔 행사',
+    '새 학기 나눔 행사',
+  ].includes(state.title)
+    ? '기숙사에서 서로 도와요'
+    : state.title;
   const comparison = useMemo(() => compareMatching(state), [state]);
   const personName = (id: string) => {
     const person = state.people.find((p) => p.id === id);
@@ -385,7 +391,6 @@ export default function NanumApp({
       ...f,
       participantId: id,
       minCondition: String(existing?.minCondition ?? 1),
-      maxDistance: String(existing?.maxDistance ?? 500),
     }));
     setSelected(existing?.itemIds ?? []);
   }
@@ -394,17 +399,16 @@ export default function NanumApp({
     setFormError('');
     setSelected([]);
     setForm({
-      zone: ZONES[0],
+      zone: '기숙사',
       category: CATEGORIES[0],
       condition: '2',
       minCondition: '1',
-      maxDistance: '500',
       ownerId: !isAdmin && user ? user.id : (state.people[0]?.id ?? ''),
       participantId:
         !isAdmin && user
           ? user.id
           : (participantId ?? state.people[0]?.id ?? ''),
-      title: '새 학기 나눔 행사',
+      title: '기숙사 생활 나눔함',
     });
     if (kind === 'request') {
       const id =
@@ -415,11 +419,11 @@ export default function NanumApp({
       setForm((f) => ({
         ...f,
         minCondition: String(existing?.minCondition ?? 1),
-        maxDistance: String(existing?.maxDistance ?? 500),
       }));
       setSelected(existing?.itemIds ?? []);
     }
-    if (kind === 'item') setForm((f) => ({ ...f, title: '' }));
+    if (kind === 'item' || kind === 'need')
+      setForm((f) => ({ ...f, title: '' }));
     if (item) setDetail(item);
     setModal(kind);
   }
@@ -439,18 +443,25 @@ export default function NanumApp({
         type: 'add-item',
         condition: Number(form.condition),
       };
+    else if (modal === 'need')
+      command = {
+        type: 'add-need',
+        requesterId: form.participantId,
+        title: form.title,
+        category: form.category,
+        description: form.description,
+      };
     else if (modal === 'request')
       command = {
         type: 'apply',
         participantId: form.participantId,
         itemIds: selected,
         minCondition: Number(form.minCondition),
-        maxDistance: Number(form.maxDistance),
       };
     else if (modal === 'event') {
       setModal(null);
       setConfirm({
-        title: '새 행사를 시작할까요?',
+        title: '나눔함을 비울까요?',
         description:
           '현재 화면의 물품, 참여자, 신청과 배정이 비워집니다. 필요한 배정 결과는 먼저 내려받아 주세요.',
         command: { type: 'new-event', title: form.title },
@@ -509,19 +520,19 @@ export default function NanumApp({
           </span>
           다시, 나눔<span className="brand-dot">.</span>
         </button>
-        <span className="header-label">우리 학교 자원 순환 프로젝트</span>
+        <span className="header-label">기숙사에서 서로 돕는 생활 나눔</span>
         <span className="mode-badge">
           {user
             ? `${user.name} · ${isAdmin ? '운영자' : user.loginId}`
-            : '예시 행사 · 운영자'}
+            : '가상 시연 · 운영자'}
         </span>
       </header>
       <main className="workspace" aria-busy={isDisabled}>
         <div className="page-heading">
           <div>
-            <div className="eyebrow">SCHOOL SHARING CLUB</div>
-            <h1>우리 학교 나눔함</h1>
-            <p>쓰임이 남은 물건, 다음 주인을 만나도록.</p>
+            <div className="eyebrow">DORM LIFE, TOGETHER</div>
+            <h1>기숙사에서 서로 도와요</h1>
+            <p>필요한 건 부탁하고, 여유 있는 건 나눠요.</p>
           </div>
           <Button
             className="action-button"
@@ -588,22 +599,38 @@ export default function NanumApp({
             <div className="event-bar">
               <span>
                 <span className={'status-dot ' + (open ? '' : 'closed')} />
-                <strong>{state.title}</strong> · {state.round}회차{' '}
+                <strong>{displayTitle}</strong> · {state.round}번째 배정{' '}
                 <span className="event-status">
                   {open ? '신청 접수 중' : '신청 마감'}
                 </span>
               </span>
               <div>
                 <span className="demo-label">
-                  {state.isDemo ? '예시 자료' : '내 행사'}
+                  {state.isDemo ? '예시 자료' : '내 나눔 모음'}
                 </span>
+                {isAdmin && !open && (
+                  <Button
+                    variant="outline"
+                    disabled={isDisabled}
+                    onClick={() =>
+                      setConfirm({
+                        title: '다음 나눔을 이어갈까요?',
+                        description:
+                          '전달이 끝난 물품과 배정은 정리하고, 남은 물품·미배정 신청·필요해요 글은 유지합니다. 다시 물품을 올리고 신청할 수 있어요.',
+                        command: { type: 'next-round' },
+                      })
+                    }
+                  >
+                    다음 나눔 이어가기
+                  </Button>
+                )}
                 {isAdmin && (
                   <Button
                     variant="ghost"
                     onClick={() => show('event')}
                     disabled={isDisabled}
                   >
-                    새 행사
+                    나눔함 초기화
                   </Button>
                 )}
               </div>
@@ -612,12 +639,13 @@ export default function NanumApp({
               <p className="demo-note">
                 {workspace
                   ? '가상 학생과 물품으로 구성한 캡처용 예시입니다. 실제 나눔은 상단의 ‘실제 나눔함으로’에서 진행해 주세요.'
-                  : '가상 학생과 물품으로 시작하는 시연입니다. 실제 자료는 ‘새 행사’에서 등록해 주세요.'}
+                  : '가상 학생과 물품으로 시작하는 시연입니다. 실제 자료는 ‘나눔함 초기화’에서 등록해 주세요.'}
               </p>
             )}
             <Tabs value={tab} onValueChange={(v) => setTab(String(v))}>
               <TabsList className="main-tabs" variant="line">
-                <TabsTrigger value="items">나눔 물품</TabsTrigger>
+                <TabsTrigger value="items">나눠요</TabsTrigger>
+                <TabsTrigger value="needs">필요해요</TabsTrigger>
                 <TabsTrigger value="requests">참여자·신청</TabsTrigger>
                 <TabsTrigger value="matching">자동 매칭</TabsTrigger>
                 <TabsTrigger value="about">알고리즘 이야기</TabsTrigger>
@@ -739,7 +767,7 @@ export default function NanumApp({
                     <div className="rule-note">
                       <Network size={22} />
                       <div>
-                        <strong>한 회차에 한 사람당 하나</strong>
+                        <strong>이번 배정에 한 사람당 하나</strong>
                         <p>
                           이미 확정한 배정은 유지하며, 남은 물품과 신청자를
                           연결합니다.
@@ -748,6 +776,98 @@ export default function NanumApp({
                     </div>
                   </aside>
                 </div>
+              </TabsContent>
+              <TabsContent value="needs">
+                <div className="section-top">
+                  <div>
+                    <h2>
+                      이런 물건이 필요해요{' '}
+                      <span>
+                        {(state.needs ?? []).filter((n) => !n.resolved).length}
+                      </span>
+                    </h2>
+                    <p className="subtle">
+                      기숙사 생활 중 필요한 물건을 부탁해 보세요. 여유 있는
+                      친구가 나눔 물품으로 올릴 수 있어요.
+                    </p>
+                  </div>
+                  <Button
+                    disabled={isDisabled || !state.people.length}
+                    onClick={() => show('need')}
+                  >
+                    <Plus size={17} /> 부탁 올리기
+                  </Button>
+                </div>
+                <div className="people-grid">
+                  {(state.needs ?? []).map((need) => (
+                    <article className="panel need-card" key={need.id}>
+                      <div className="panel-heading">
+                        <span
+                          className={
+                            'status-pill ' + (need.resolved ? 'done' : '')
+                          }
+                        >
+                          {need.resolved ? '해결했어요' : '필요해요'}
+                        </span>
+                        <span className="subtle">{need.category}</span>
+                      </div>
+                      <h3>{need.title}</h3>
+                      <p>
+                        {need.description ||
+                          '여유 있는 친구가 있다면 도와주세요.'}
+                      </p>
+                      <p className="subtle">
+                        부탁한 사람 · {personName(need.requesterId)}
+                      </p>
+                      {!need.resolved && (
+                        <div className="button-row">
+                          {(isAdmin || need.requesterId === user?.id) && (
+                            <Button
+                              variant="outline"
+                              disabled={isDisabled}
+                              onClick={() =>
+                                perform(
+                                  { type: 'resolve-need', needId: need.id },
+                                  '부탁을 해결한 것으로 표시했어요.',
+                                )
+                              }
+                            >
+                              <Check size={16} /> 해결했어요
+                            </Button>
+                          )}
+                          {open &&
+                            (isAdmin || need.requesterId !== user?.id) && (
+                              <Button
+                                variant="outline"
+                                disabled={isDisabled}
+                                onClick={() => {
+                                  show('item');
+                                  setForm((f) => ({
+                                    ...f,
+                                    title: need.title,
+                                    category: need.category,
+                                    description:
+                                      '필요해요 글을 보고 나누는 물품입니다. 상태를 확인해 주세요.',
+                                  }));
+                                }}
+                              >
+                                <Plus size={16} /> 이 물품 나눠요
+                              </Button>
+                            )}
+                        </div>
+                      )}
+                    </article>
+                  ))}
+                </div>
+                {!(state.needs ?? []).length &&
+                  empty(
+                    '필요한 물건이 있나요?',
+                    '생활용품이나 학용품 등 필요한 물건과 원하는 조건을 적어 친구들에게 부탁해 보세요.',
+                  )}
+                <p className="panel-footnote">
+                  친구가 물품을 올리면 ‘나눠요’에서 받을 수 있는 후보를 선택해
+                  신청하세요. 부탁 글 자체가 배정 확정을 뜻하지는 않아요.
+                </p>
               </TabsContent>
               <TabsContent value="requests">
                 <div className="section-top">
@@ -842,7 +962,7 @@ export default function NanumApp({
                               ) : application ? (
                                 <>
                                   <span>조건에 맞는 물품 {valid}개</span>
-                                  <span>최대 {application.maxDistance}m</span>
+                                  <span>받을 수 있는 물품을 직접 선택</span>
                                 </>
                               ) : (
                                 <span>
@@ -864,8 +984,8 @@ export default function NanumApp({
                 <div className="info-note">
                   <Info size={18} />
                   <p>
-                    물품은 여러 개 신청할 수 있지만 받을 수 있는 물품은 회차당
-                    한 개입니다. 상태와 거리 조건에 맞지 않는 신청은 배정에서
+                    물품은 여러 개 신청할 수 있지만 받을 수 있는 물품은 배정당
+                    한 개입니다. 물품 상태 조건에 맞지 않는 신청은 배정에서
                     제외됩니다.
                   </p>
                 </div>
@@ -1184,9 +1304,9 @@ export default function NanumApp({
                 <div className="info-note">
                   <Info size={18} />
                   <p>
-                    최대 매칭은 배정 건수를 최대화합니다. 선호 순위, 공정성,
-                    이동 거리의 최소화를 보장하는 알고리즘은 아닙니다. 거리는
-                    신청 가능 여부를 판단하는 조건으로 사용합니다.
+                    최대 매칭은 받을 수 있는 물품을 바탕으로 배정 건수를
+                    최대화합니다. 원하는 순위나 대기 이력에 따른 우선 배정을
+                    보장하지는 않습니다.
                   </p>
                 </div>
               </TabsContent>
@@ -1197,15 +1317,15 @@ export default function NanumApp({
                   <p>
                     여러 물품 중 아무거나 받을 수 있는 학생과 특정 물품만 필요한
                     학생이 함께 신청하면, 개별 배정 순서에 따라 물품이 남을 수
-                    있습니다. 학교 행사 전체를 한 번에 배정해 이런 낭비를 줄이는
-                    것이 목표입니다.
+                    있습니다. 기숙사 친구들이 올린 나눔과 신청을 함께 살펴 더
+                    많은 부탁을 해결하는 것이 목표입니다.
                   </p>
                   <div className="about-columns">
                     <div>
                       <h3>이분 그래프</h3>
                       <p>
-                        왼쪽은 물품 한 개, 오른쪽은 신청자 한 명. 신청
-                        목록·상태·수령 거리 조건이 맞을 때만 연결합니다.
+                        왼쪽은 물품 한 개, 오른쪽은 신청자 한 명. 신청 목록과
+                        물품 상태 조건이 맞을 때만 연결합니다.
                       </p>
                     </div>
                     <div>
@@ -1216,9 +1336,9 @@ export default function NanumApp({
                       </p>
                     </div>
                     <div>
-                      <h3>학교 행사에 맞춘 규칙</h3>
+                      <h3>기숙사 나눔의 규칙</h3>
                       <p>
-                        회차당 1인 1개, 자기 물품 신청 제외, 확정·전달 배정
+                        배정당 1인 1개, 자기 물품 신청 제외, 확정·전달 배정
                         보존. 실제 전달은 운영자가 확인합니다.
                       </p>
                     </div>
@@ -1232,13 +1352,13 @@ export default function NanumApp({
                           setConfirm({
                             title: '예시 자료로 바꿀까요?',
                             description:
-                              '현재 행사 자료를 가상 물품 6개와 참여자 7명으로 바꿉니다. 예시에서는 신청자 6명에 대해 순차 배정 3건, 최대 매칭 6건이 나옵니다.',
+                              '현재 나눔 자료를 가상 물품 6개와 참여자 7명으로 바꿉니다. 예시에서는 신청자 6명에 대해 순차 배정 3건, 최대 매칭 6건이 나옵니다.',
                             command: { type: 'load-demo' },
                           })
                         }
                       >
                         <RefreshCw size={16} />
-                        예시 행사 불러오기
+                        가상 시연 불러오기
                       </Button>
                     )}
                     <a
@@ -1281,22 +1401,26 @@ export default function NanumApp({
                   ? '나눔 물품 등록'
                   : modal === 'request'
                     ? '나눔 신청'
-                    : modal === 'event'
-                      ? '새 행사 시작'
-                      : detail?.title}
+                    : modal === 'need'
+                      ? '필요한 물건 부탁하기'
+                      : modal === 'event'
+                        ? '나눔함 초기화'
+                        : detail?.title}
             </DialogTitle>
             <DialogDescription>
               {modal === 'request'
-                ? '실제로 받을 수 있는 물품을 모두 선택해 주세요. 한 회차에 최대 한 개를 받습니다.'
+                ? '실제로 받을 수 있는 물품을 모두 선택해 주세요. 이번 배정에 최대 한 개를 받습니다.'
                 : modal === 'person'
                   ? '이름과 네 자리 학번을 입력해 주세요.'
                   : modal === 'item'
                     ? '수령 가능한 구역과 상태를 정확히 알려 주세요.'
-                    : modal === 'event'
-                      ? '새 행사의 이름을 정해 주세요.'
-                      : detail
-                        ? `${detail.category} · ${CONDITIONS[detail.condition - 1]} · ${detail.zone}`
-                        : ''}
+                    : modal === 'need'
+                      ? '무엇이 필요한지, 어떤 상태면 괜찮은지 친구들에게 알려 주세요.'
+                      : modal === 'event'
+                        ? '나눔함의 이름을 정해 주세요.'
+                        : detail
+                          ? `${detail.category} · ${CONDITIONS[detail.condition - 1]} · ${detail.zone}`
+                          : ''}
             </DialogDescription>
           </DialogHeader>
           {modal === 'detail' && detail ? (
@@ -1454,6 +1578,45 @@ export default function NanumApp({
                   </label>
                 </>
               )}
+              {modal === 'need' && (
+                <>
+                  <Choice
+                    label="부탁하는 사람"
+                    value={form.participantId}
+                    options={state.people
+                      .filter((p) => isAdmin || p.id === user?.id)
+                      .map((p) => ({ value: p.id, label: personLabel(p) }))}
+                    onChange={(v) => values('participantId', v)}
+                  />
+                  <label className="field" htmlFor="need-title">
+                    <span>필요한 물품</span>
+                    <Input
+                      id="need-title"
+                      value={form.title ?? ''}
+                      onChange={(e) => values('title', e.target.value)}
+                      placeholder="예: 여분의 옷걸이가 필요해요"
+                      maxLength={60}
+                      required
+                    />
+                  </label>
+                  <Choice
+                    label="물품 종류"
+                    value={form.category}
+                    options={opts(CATEGORIES)}
+                    onChange={(v) => values('category', v)}
+                  />
+                  <label className="field">
+                    <span>부탁 내용</span>
+                    <textarea
+                      value={form.description ?? ''}
+                      onChange={(e) => values('description', e.target.value)}
+                      placeholder="필요한 이유와 원하는 상태 등을 적어 주세요."
+                      maxLength={500}
+                      rows={3}
+                    />
+                  </label>
+                </>
+              )}
               {modal === 'request' && (
                 <>
                   <Choice
@@ -1467,7 +1630,7 @@ export default function NanumApp({
                       }))}
                     onChange={choosePerson}
                   />
-                  <div className="form-columns">
+                  <div>
                     <Choice
                       label="받을 수 있는 최소 상태"
                       value={form.minCondition}
@@ -1477,22 +1640,7 @@ export default function NanumApp({
                       }))}
                       onChange={(v) => values('minCondition', v)}
                     />
-                    <Choice
-                      label="이동 가능한 거리"
-                      value={form.maxDistance}
-                      options={[
-                        { value: '0', label: '같은 구역만' },
-                        { value: '200', label: '200m 이내' },
-                        { value: '400', label: '400m 이내' },
-                        { value: '500', label: '500m 이내' },
-                      ]}
-                      onChange={(v) => values('maxDistance', v)}
-                    />
                   </div>
-                  <p className="field-hint">
-                    교내 기준 거리: 본관↔후관 200m, 본관↔기숙사 500m,
-                    후관↔기숙사 400m. 실제 GPS 거리가 아닙니다.
-                  </p>
                   <fieldset className="item-choices">
                     <legend>받을 수 있는 물품 · 복수 선택</legend>
                     {state.items
@@ -1503,9 +1651,7 @@ export default function NanumApp({
                         );
                         const fits =
                           item.condition >= Number(form.minCondition) &&
-                          !!person &&
-                          distance(person.zone, item.zone) <=
-                            Number(form.maxDistance);
+                          !!person;
                         return (
                           <label
                             className="item-choice"
@@ -1548,7 +1694,7 @@ export default function NanumApp({
               )}
               {modal === 'event' && (
                 <label className="field" htmlFor="event-title">
-                  <span>행사 이름</span>
+                  <span>나눔함 이름</span>
                   <Input
                     id="event-title"
                     value={form.title ?? ''}
@@ -1608,7 +1754,7 @@ export default function NanumApp({
               onClick={(e) => {
                 e.preventDefault();
                 if (confirm)
-                  void act(confirm.command, '행사 자료를 업데이트했습니다.')
+                  void act(confirm.command, '나눔 자료를 업데이트했습니다.')
                     .then(() => setConfirm(null))
                     .catch(() => {});
               }}

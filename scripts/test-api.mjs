@@ -63,7 +63,6 @@ await send({
   participantId: person.id,
   itemIds: [item.id],
   minCondition: 1,
-  maxDistance: 200,
 });
 await send(
   {
@@ -71,7 +70,6 @@ await send(
     participantId: donor.id,
     itemIds: [item.id],
     minCondition: 1,
-    maxDistance: 500,
   },
   400,
 );

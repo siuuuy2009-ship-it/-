@@ -87,13 +87,23 @@ await command(donor.cookie, {
   zone: '본관',
 });
 const item = (await snapshot(admin.cookie)).state.items[0];
+await command(donor.cookie, {
+  type: 'add-need',
+  requesterId: recipient.data.user.id,
+  title: '가상 옷걸이 부탁',
+  category: '생활용품',
+  description: '기숙사 시연 자료',
+});
+const need = (await snapshot(admin.cookie)).state.needs[0];
+assert.equal(need.requesterId, donor.data.user.id);
+await command(recipient.cookie, { type: 'resolve-need', needId: need.id }, 400);
+await command(donor.cookie, { type: 'resolve-need', needId: need.id });
 assert.equal(item.ownerId, donor.data.user.id);
 await command(recipient.cookie, {
   type: 'apply',
   participantId: donor.data.user.id,
   itemIds: [item.id],
   minCondition: 1,
-  maxDistance: 500,
 });
 await command(recipient.cookie, { type: 'close' }, 400);
 await command(recipient.cookie, { type: 'delete-item', itemId: item.id }, 400);
@@ -148,6 +158,11 @@ assert.equal(
 assert.ok(
   !(await snapshot(admin.cookie)).state.people.some(
     (person) => person.id === donor.data.user.id,
+  ),
+);
+assert.ok(
+  !(await snapshot(admin.cookie)).state.needs.some(
+    (n) => n.requesterId === donor.data.user.id,
   ),
 );
 console.log(

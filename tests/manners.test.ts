@@ -69,7 +69,6 @@ void test('only delivered counterparties can rate once; ratings persist and with
     type: 'apply',
     itemIds: [item.id],
     minCondition: 1,
-    maxDistance: 500,
   });
   await command(admin, { type: 'close' });
   await command(admin, { type: 'confirm' });

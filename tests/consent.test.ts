@@ -163,11 +163,20 @@ void test('anonymous invitations enroll only after consent, record it and suppor
     zone: '본관',
   });
   const item = (await snapshot(admin.cookie)).state.items[0];
+  await command(donor.cookie, {
+    type: 'add-need',
+    requesterId: recipient.data.user.id,
+    title: '여분의 옷걸이 부탁해요',
+    category: '생활용품',
+  });
+  assert.equal(
+    (await snapshot(admin.cookie)).state.needs![0].requesterId,
+    donor.data.user.id,
+  );
   await command(recipient.cookie, {
     type: 'apply',
     itemIds: [item.id],
     minCondition: 1,
-    maxDistance: 500,
   });
   await command(admin.cookie, { type: 'close' });
   await command(admin.cookie, { type: 'confirm' });
@@ -187,6 +196,7 @@ void test('anonymous invitations enroll only after consent, record it and suppor
   assert.equal(after.state.items.length, 0);
   assert.equal(after.state.matches.length, 0);
   assert.equal(after.state.applications.length, 0);
+  assert.equal(after.state.needs!.length, 0);
   assert.ok(!JSON.stringify(after).includes('가상 학생가'));
   assert.equal(
     (

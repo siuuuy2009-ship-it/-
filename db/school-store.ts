@@ -544,6 +544,9 @@ export function createSchoolStore(query: Query) {
       const state: State = {
         ...snapshot.state,
         people: snapshot.state.people.filter((p) => p.id !== user.id),
+        needs: (snapshot.state.needs ?? []).filter(
+          (n) => n.requesterId !== user.id,
+        ),
         items: snapshot.state.items.filter((i) => !removedItems.has(i.id)),
         applications: snapshot.state.applications
           .filter((a) => a.participantId !== user.id)

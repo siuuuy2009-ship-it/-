@@ -66,7 +66,7 @@ export default function SchoolApp() {
   const [code, setCode] = useState(initial.invite);
   const [password, setPassword] = useState('');
   const [repeat, setRepeat] = useState('');
-  const [title, setTitle] = useState('우리 학교 나눔 행사');
+  const [title, setTitle] = useState('기숙사 생활 나눔함');
   const [consent, setConsent] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deletePassword, setDeletePassword] = useState('');
@@ -246,9 +246,9 @@ export default function SchoolApp() {
           <form className="withdraw-form nanum-form" onSubmit={withdraw}>
             <h2>동의 철회 및 계정·정보 삭제</h2>
             <p>
-              이름·학번, 계정과 로그인, 본인의 물품·신청·매너 평가 및 연결된
-              배정 자료를 삭제합니다. 다른 학생이 신청한 본인 물품의 배정도
-              취소됩니다. 삭제 후 복구할 수 없습니다.
+              이름·학번, 계정과 로그인, 본인의 물품·부탁 글·신청·매너 평가 및
+              연결된 배정 자료를 삭제합니다. 다른 학생이 신청한 본인 물품의
+              배정도 취소됩니다. 삭제 후 복구할 수 없습니다.
             </p>
             <label className="field" htmlFor="delete-password">
               <span>현재 비밀번호</span>
@@ -499,7 +499,7 @@ export default function SchoolApp() {
           {mode === 'create' ? '로그인으로' : '처음 운영하는 나눔함 만들기'}
         </Button>
         <Button variant="ghost" onClick={() => setDemo(true)}>
-          예시 행사 둘러보기 · 보고서용 가상 시연
+          가상 시연 둘러보기 · 보고서용 가상 시연
         </Button>
       </div>
     </main>

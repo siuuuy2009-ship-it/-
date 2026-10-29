@@ -213,7 +213,6 @@ void test('school accounts: one-time invitation, shared data, server permissions
     participantId: firstUser.id,
     itemIds: [item.id],
     minCondition: 1,
-    maxDistance: 500,
   });
   full = await snapshot(created.cookie);
   assert.equal(full.state.applications[0].participantId, secondUser.id);

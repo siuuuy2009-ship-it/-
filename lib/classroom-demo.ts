@@ -52,7 +52,7 @@ export class ClassroomDemo {
 
   constructor(stage: DemoStage = 'open') {
     this.state = demoState();
-    this.state.title = '함께 나누는 학교 · 가상 시연';
+    this.state.title = '기숙사에서 서로 도와요 · 가상 시연';
     this.state.people = this.state.people
       .slice(0, 6)
       .map((p) => ({ ...p, name: `가상 ${p.name}` }));
@@ -62,6 +62,35 @@ export class ClassroomDemo {
       ...item,
       ownerId: owners[i],
     }));
+    this.state.needs = [
+      {
+        id: 'n1',
+        requesterId: 'p2',
+        title: '수학 개념 참고서가 필요해요',
+        category: '도서·참고서',
+        description:
+          '기숙사 자습 때 보려고 해요. 풀지 않는 참고서가 있으면 부탁해요.',
+        resolved: false,
+      },
+      {
+        id: 'n2',
+        requesterId: 'p3',
+        title: '접이식 독서대 구해요',
+        category: '학용품',
+        description:
+          '기숙사 책상에서 쓸 독서대가 필요해요. 사용감이 있어도 괜찮아요.',
+        resolved: false,
+      },
+      {
+        id: 'n3',
+        requesterId: 'p6',
+        title: '여분의 옷걸이가 필요해요',
+        category: '생활용품',
+        description:
+          '빨래한 옷을 걸 옷걸이가 부족해요. 남는 것이 있으면 나눠 주세요.',
+        resolved: false,
+      },
+    ];
     const common = { schoolId: 'classroom-demo', schoolCode: 'DEMO' };
     this.users = [
       {

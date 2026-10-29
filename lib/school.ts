@@ -64,6 +64,14 @@ export function authorizeSchoolCommand(
   if (user.role === 'admin') return command;
   if (command.type === 'add-item') return { ...command, ownerId: user.id };
   if (command.type === 'apply') return { ...command, participantId: user.id };
+  if (command.type === 'add-need') return { ...command, requesterId: user.id };
+  if (
+    command.type === 'resolve-need' &&
+    state.needs?.some(
+      (n) => n.id === command.needId && n.requesterId === user.id,
+    )
+  )
+    return command;
   if (
     command.type === 'delete-item' &&
     state.items.some((i) => i.id === command.itemId && i.ownerId === user.id)

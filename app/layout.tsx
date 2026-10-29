@@ -2,10 +2,10 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: '다시, 나눔 | 우리 학교 나눔 매칭',
+  title: '다시, 나눔 | 기숙사 생활 나눔',
   icons: { icon: '/favicon.svg' },
   description:
-    '최대 이분 매칭으로 더 많은 학생에게 물품을 연결하는 학교 나눔 앱.',
+    '기숙사에서 필요한 물건은 부탁하고 여유 있는 물건은 나누는 학생 생활 앱.',
 };
 
 export default function RootLayout({

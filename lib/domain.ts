@@ -29,7 +29,14 @@ export type Application = {
   participantId: string;
   itemIds: string[];
   minCondition: number;
-  maxDistance: number;
+};
+export type Need = {
+  id: string;
+  requesterId: string;
+  title: string;
+  category: (typeof CATEGORIES)[number];
+  description: string;
+  resolved: boolean;
 };
 export type Pair = Edge & { status: 'confirmed' | 'delivered' };
 export type State = {
@@ -41,6 +48,7 @@ export type State = {
   items: Item[];
   applications: Application[];
   matches: Pair[];
+  needs?: Need[];
 };
 export type Command = { type: string; [key: string]: unknown };
 export class DomainError extends Error {}
@@ -64,15 +72,7 @@ export function personLabel(person: Person): string {
     : person.name;
 }
 
-export function distance(a: Zone, b: Zone): number {
-  const meters = [
-    [0, 200, 500],
-    [200, 0, 400],
-    [500, 400, 0],
-  ];
-  return meters[ZONES.indexOf(a)]?.[ZONES.indexOf(b)] ?? Infinity;
-}
-export function emptyState(round = 1, title = '우리 학교 나눔 행사'): State {
+export function emptyState(round = 1, title = '기숙사 생활 나눔함'): State {
   return {
     title,
     round,
@@ -82,6 +82,7 @@ export function emptyState(round = 1, title = '우리 학교 나눔 행사'): St
     items: [],
     applications: [],
     matches: [],
+    needs: [],
   };
 }
 export function demoState(): State {
@@ -97,12 +98,12 @@ export function demoState(): State {
     id: `p${i + 1}`,
     name,
     ...(i < 6 ? { studentNumber: `110${i + 1}` } : {}),
-    zone: '본관',
+    zone: '기숙사',
   }));
   const titles = [
     '수학 개념 참고서 A',
     '수학 유형 참고서 B',
-    '깨끗한 하복 셔츠',
+    '깨끗한 생활복',
     '접이식 독서대',
     '과학 실험 길잡이',
     '튼튼한 실내화',
@@ -114,11 +115,11 @@ export function demoState(): State {
     ownerId: 'p7',
     category: CATEGORIES[categories[i]],
     condition: (i % 2) + 2,
-    zone: '본관',
+    zone: '기숙사',
     description: [
       '필기 없이 깨끗해요. 개념 공부에 도움이 되었으면 좋겠어요.',
       '문제 풀이 연습용이에요. 앞부분에 연필 필기가 조금 있어요.',
-      '하복 셔츠 95 사이즈입니다. 세탁을 마쳤어요.',
+      '기숙사에서 입을 수 있는 생활복 95 사이즈예요. 세탁했어요.',
       '각도 조절이 가능하고 접어서 보관할 수 있어요.',
       '중등 과학 탐구 활동을 정리한 책이에요.',
       '250mm 실내화예요. 사이즈를 확인해 주세요.',
@@ -133,7 +134,7 @@ export function demoState(): State {
     ['i5'],
   ];
   return {
-    ...emptyState(1, '학기 말 함께 나눔'),
+    ...emptyState(1, '기숙사에서 서로 도와요'),
     isDemo: true,
     people,
     items,
@@ -141,7 +142,6 @@ export function demoState(): State {
       participantId: `p${i + 1}`,
       itemIds,
       minCondition: 1,
-      maxDistance: 500,
     })),
   };
 }
@@ -157,8 +157,7 @@ export function eligibleEdges(state: State): Edge[] {
         continue;
       if (
         request.itemIds.includes(item.id) &&
-        item.condition >= request.minCondition &&
-        distance(person.zone, item.zone) <= request.maxDistance
+        item.condition >= request.minCondition
       ) {
         edges.push({ itemId: item.id, participantId: person.id });
       }
@@ -218,10 +217,60 @@ export function applyCommand(
       throw new DomainError('신청이 마감되었습니다. 접수를 다시 열어 주세요.');
   };
   switch (cmd.type) {
+    case 'add-need': {
+      const requesterId = text(cmd.requesterId, '부탁하는 사람');
+      if (!state.people.some((p) => p.id === requesterId))
+        throw new DomainError('먼저 학생으로 등록해 주세요.');
+      const needs = state.needs ?? [];
+      if (needs.length >= 288)
+        throw new DomainError('부탁 글은 최대 288개까지 등록할 수 있어요.');
+      const description =
+        typeof cmd.description === 'string' ? cmd.description.trim() : '';
+      if (description.length > 500)
+        throw new DomainError('설명은 500자 이내로 적어 주세요.');
+      state.needs = [
+        ...needs,
+        {
+          id: id(),
+          requesterId,
+          title: text(cmd.title, '필요한 물품', 60),
+          category: choice(cmd.category, CATEGORIES, '종류'),
+          description,
+          resolved: false,
+        },
+      ];
+      break;
+    }
+    case 'resolve-need': {
+      const need = state.needs?.find((n) => n.id === cmd.needId);
+      if (!need) throw new DomainError('부탁 글을 찾을 수 없어요.');
+      need.resolved = true;
+      break;
+    }
+    case 'next-round': {
+      if (state.matches.some((m) => m.status !== 'delivered'))
+        throw new DomainError(
+          '전달 대기 중인 배정을 먼저 완료하거나 취소해 주세요.',
+        );
+      const delivered = new Set(state.matches.map((m) => m.itemId));
+      const received = new Set(state.matches.map((m) => m.participantId));
+      state.items = state.items.filter((i) => !delivered.has(i.id));
+      state.applications = state.applications
+        .filter((a) => !received.has(a.participantId))
+        .map((a) => ({
+          ...a,
+          itemIds: a.itemIds.filter((id) => !delivered.has(id)),
+        }))
+        .filter((a) => a.itemIds.length);
+      state.matches = [];
+      state.phase = 'open';
+      state.round++;
+      break;
+    }
     case 'add-person': {
       open();
       if (state.people.length >= 288)
-        throw new DomainError('한 행사에는 최대 288명까지 등록할 수 있어요.');
+        throw new DomainError('나눔함에는 최대 288명까지 등록할 수 있어요.');
       const name = text(cmd.name, '참여자 이름', 20);
       const student = parseStudentNumber(cmd.studentNumber);
       if (!student)
@@ -243,7 +292,9 @@ export function applyCommand(
     case 'add-item': {
       open();
       if (state.items.length >= 80)
-        throw new DomainError('한 행사에는 최대 80개까지 등록할 수 있어요.');
+        throw new DomainError(
+          '한 나눔 모음에는 최대 80개까지 등록할 수 있어요.',
+        );
       const ownerId = text(cmd.ownerId, '나눔자');
       if (!state.people.some((p) => p.id === ownerId))
         throw new DomainError('나눔자를 먼저 등록해 주세요.');
@@ -299,11 +350,10 @@ export function applyCommand(
           '자신의 물품이나 삭제된 물품에는 신청할 수 없어요.',
         );
       const minCondition = number(cmd.minCondition, 1, 3, '최소 상태');
-      const maxDistance = number(cmd.maxDistance, 0, 500, '최대 이동 거리');
       const existing = state.applications.findIndex(
         (a) => a.participantId === participantId,
       );
-      const application = { participantId, itemIds, minCondition, maxDistance };
+      const application = { participantId, itemIds, minCondition };
       if (existing !== -1)
         state.applications.splice(
           existing,
@@ -358,7 +408,7 @@ export function applyCommand(
       break;
     }
     case 'new-event':
-      return emptyState(1, text(cmd.title, '행사 이름', 50));
+      return emptyState(1, text(cmd.title, '나눔함 이름', 50));
     case 'load-demo':
       return demoState();
     default:
